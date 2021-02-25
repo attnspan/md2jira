@@ -32,7 +32,6 @@ detect_issue() {
 get_description() {
     EOD_REX="^---$"
     if [[ ${1} =~ ${EOD_REX} ]]; then
-        #printf "YAY: ${DESCRIPTION}\\\ "
         SUMMARY_FOUND=0
         return 0
     else
@@ -47,6 +46,7 @@ while read "LINE"; do
         get_description "${LINE}"
         RES=$?   
         if [[ ${RES} -eq 0 ]]; then
+            DESCRIPTION=$(echo "${DESCRIPTION}" | sed -e 's@^[\ ]* \(.*\)$@\1@')
             CMD+=' -o description="'${DESCRIPTION}'"'
             if [[ ${SUBTASK_FOUND} -eq 1 ]]; then
                 CMD+=" ${STORY_ID}"

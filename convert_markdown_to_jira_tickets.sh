@@ -18,7 +18,7 @@ detect_issue() {
     local LINE=${1}
     local EPIC_REX="^#[[:space:]]"
     local STORY_REX="^##[[:space:]]"
-    local SUBTASK_REX="^##[[:space:]]"
+    local SUBTASK_REX="^###[[:space:]]"
 
     if [[ ${LINE} =~ ${EPIC_REX} ]]; then
         EPIC_FOUND=1
@@ -35,26 +35,32 @@ get_description() {
         SUMMARY_FOUND=0
         return 0
     else
-        DESCRIPTION="${DESCRIPTION}\\\\\ ${1}"
+        #DESCRIPTION="${DESCRIPTION}\\\\\ ${1}"
+        DESCRIPTION+="${1}"
+        DESCRIPTION+='\\ '
         return 1
     fi
 }
 
 while read "LINE"; do
 
+    echo "LINE (${SUMMARY_FOUND}): ${LINE}"
+
     if [[ ${SUMMARY_FOUND} -eq 1 ]]; then
         get_description "${LINE}"
         RES=$?   
         if [[ ${RES} -eq 0 ]]; then
-            DESCRIPTION=$(echo "${DESCRIPTION}" | sed -e 's@^[\ ]* \(.*\)$@\1@')
-            CMD+=' -o description="'${DESCRIPTION}'"'
+            #DESCRIPTION=$(echo "${DESCRIPTION}" | sed -e 's@[\]* \([[:alpha:]]\)@\1@g')
+            DESCRIPTION=$(echo "${DESCRIPTION}" | sed -e 's@^[\]*\ \([[:alpha:]]\)@\1@g')
+            CMD+=" -o description='"${DESCRIPTION}"'"
             if [[ ${SUBTASK_FOUND} -eq 1 ]]; then
                 CMD+=" ${STORY_ID}"
             fi
-            echo ${CMD}
+            echo "${CMD}"
             RES=$(bash -c "${CMD}")
             if [[ ${STORY_FOUND} -eq 1 ]]; then
                 STORY_ID=$(echo ${RES} | awk '{print $2}')
+                echo "${RES}"
                 echo "STORY_ID: ${STORY_ID}"
                 STORY_FOUND=0
             elif [[ ${SUBTASK_FOUND} ]]; then

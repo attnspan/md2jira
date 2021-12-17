@@ -1,7 +1,8 @@
 #!/bin/bash
 
-DEBUG=1
+DEBUG=${DEBUG:-1}
 INFILE=${1}
+PROJECT=${2:-'DRT'}
 EPIC_ID=''
 STORY_ID=''
 
@@ -78,14 +79,10 @@ while read "LINE"; do
     if [[ ${LINE} =~ ${EPIC_REX} ]]; then
         EPIC=$(echo ${LINE} | sed -e 's@'${EPIC_REX}'@@')
         echo "Epic: ${EPIC}"
-        if [[ DEBUG -eq 1 ]]; then
-            echo 'jira epic create --noedit -p DRT -o summary="'${EPIC}'" -o "epic-name"="'${EPIC}'"'
-        else
-            RES=$(jira epic create --noedit -p DRT -o summary="${EPIC}" -o "epic-name"="${EPIC}")
-            EPIC_ID=$(echo ${RES} | awk '{print $2}')
-            echo "RES: ${RES}"
-            echo "EPIC_ID: ${EPIC_ID}"
-        fi
+        RES=$(jira epic create --noedit -p ${PROJECT} -o summary="${EPIC}" -o "epic-name"="${EPIC}")
+        EPIC_ID=$(echo ${RES} | awk '{print $2}')
+        echo "RES: ${RES}"
+        echo "EPIC_ID: ${EPIC_ID}"
     fi
 
     STORY_REX="^##[[:space:]]"
@@ -95,10 +92,10 @@ while read "LINE"; do
         SUMMARY_FOUND=1
         STORY_FOUND=1
         if [[ DEBUG -eq 1 ]]; then
-            CMD='jira create --noedit -p DRT -o summary="'${STORY}'"'
+            CMD='jira create --noedit -p '${PROJECT}' -o summary="'${STORY}'"'
             [[ ! -z ${EPIC_ID} ]] && CMD="${CMD} -o \"epiclink\"=\"${EPIC_ID}\""
         else
-            RES=$(jira create --noedit -p DRT -o summary="${STORY}" -o "epiclink"="${EPIC_ID}")
+            RES=$(jira create --noedit -p ${PROJECT} -o summary="${STORY}" -o "epiclink"="${EPIC_ID}")
             STORY_ID=$(echo ${RES} | awk '{print $2}')
             echo "RES: ${RES}"
             echo "STORY_ID: ${STORY_ID}"
@@ -112,13 +109,13 @@ while read "LINE"; do
         SUMMARY_FOUND=1
         SUBTASK_FOUND=1
         if [[ DEBUG -eq 1 ]]; then
-            CMD='jira subtask --noedit -p DRT -o summary="'${SUBTASK}'"'
+            CMD='jira subtask --noedit -p '${PROJECT}' -o summary="'${SUBTASK}'"'
         else	
-            RES=$(jira subtask --noedit -p DRT -o summary="${SUBTASK}")
+            RES=$(jira subtask --noedit -p ${PROJECT} -o summary="${SUBTASK}")
             SUBTASK_ID=$(echo ${RES} | awk '{print $2}')
             echo "RES: ${RES}"
             echo "SUBTASK_ID: ${SUBTASK_ID}"
         fi
     fi
 
-done < ${INFILE}
+done < "${INFILE}"

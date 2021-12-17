@@ -15,6 +15,52 @@ CMD=''
 
 # @see https://j.mp/3qAGH1q for WTF about the three slashes (plus spaces) below
 
+prepare_epic() {
+    local PROJECT=${1:-DRT}
+    local SUMMARY=${2}
+    local DESCRIPTION=${3}
+
+    TMPFILE=$(mktemp)
+    cat data_epic.json.in | sed \
+    -e 's@{{PROJECT}}@'${PROJECT}'@g' \
+    -e 's@{{SUMMARY}}@'"${SUMMARY}"'@g' \
+    -e 's@{{DESCRIPTION}}@'"${DESCRIPTION}"'@g' >> "${TMPFILE}"
+
+    echo "${TMPFILE}"
+}
+
+prepare_story() {
+    local PROJECT=${1:-DRT}
+    local EPIC_ID=${2}
+    local SUMMARY=${3}
+    local DESCRIPTION=${4}
+
+    TMPFILE=$(mktemp)
+    cat data_story.json.in | sed \
+    -e 's@{{PROJECT}}@'${PROJECT}'@g' \
+    -e 's@{{EPIC_ID}}@'${EPIC_ID}'@g' \
+    -e 's@{{SUMMARY}}@'"${SUMMARY}"'@g' \
+    -e 's@{{DESCRIPTION}}@'"${DESCRIPTION}"'@g' >> "${TMPFILE}"
+
+    echo "${TMPFILE}"
+}
+
+prepare_subtask() {
+    local PROJECT=${1:-DRT}
+    local PARENT_ID=${2}
+    local SUMMARY=${3}
+    local DESCRIPTION=${4}
+
+    TMPFILE=$(mktemp)
+    cat data_subtask.json.in | sed \
+    -e 's@{{PROJECT}}@'${PROJECT}'@g' \
+    -e 's@{{PARENT_ID}}@'${PARENT_ID}'@g' \
+    -e 's@{{SUMMARY}}@'"${SUMMARY}"'@g' \
+    -e 's@{{DESCRIPTION}}@'"${DESCRIPTION}"'@g' >> "${TMPFILE}"
+
+    echo "${TMPFILE}"
+}
+
 detect_issue() {
     local LINE=${1}
     local EPIC_REX="^#[[:space:]]"
@@ -36,9 +82,8 @@ get_description() {
         SUMMARY_FOUND=0
         return 0
     else
-        #DESCRIPTION="${DESCRIPTION}\\\\\ ${1}"
         DESCRIPTION+="${1}"
-        DESCRIPTION+='\\ '
+        DESCRIPTION+='\\n'
         return 1
     fi
 }
@@ -51,21 +96,28 @@ while read "LINE"; do
         get_description "${LINE}"
         RES=$?   
         if [[ ${RES} -eq 0 ]]; then
-            #DESCRIPTION=$(echo "${DESCRIPTION}" | sed -e 's@[\]* \([[:alpha:]]\)@\1@g')
             DESCRIPTION=$(echo "${DESCRIPTION}" | sed -e 's@^[\]*\ \([[:alpha:]]\)@\1@g')
             CMD+=" -o description='"${DESCRIPTION}"'"
             if [[ ${SUBTASK_FOUND} -eq 1 ]]; then
                 CMD+=" ${STORY_ID}"
             fi
-            echo "${CMD}"
-            RES=$(bash -c "${CMD}")
+
+            # echo "${CMD}"
+            # Run actual command
+            # RES=$(bash -c "${CMD}")
+
             if [[ ${STORY_FOUND} -eq 1 ]]; then
-                STORY_ID=$(echo ${RES} | awk '{print $2}')
+                STORY_TMPFILE=$(prepare_story ${PROJECT} ${EPIC_ID} "${STORY}" "${DESCRIPTION}")
+                RES=$(bash -c "./test_cli.sh ${STORY_TMPFILE}")
+                STORY_ID=$(echo ${RES} | jq -r '.key')
                 echo "${RES}"
                 echo "STORY_ID: ${STORY_ID}"
                 STORY_FOUND=0
             elif [[ ${SUBTASK_FOUND} ]]; then
-                SUBTASK_ID=$(echo ${RES} | awk '{print $2}')
+                SUBTASK_TMPFILE=$(prepare_subtask ${PROJECT} ${STORY_ID} "${SUBTASK}" "${DESCRIPTION}")
+                echo "SUBTASK_TMPFILE: ${SUBTASK_TMPFILE}"
+                RES=$(bash -c "./test_cli.sh ${SUBTASK_TMPFILE}")
+                SUBTASK_ID=$(echo ${RES} | jq -r '.key')
                 echo "SUBTASK_ID: ${SUBTASK_ID}"
                 SUBTASK_FOUND=0
             fi
@@ -79,8 +131,10 @@ while read "LINE"; do
     if [[ ${LINE} =~ ${EPIC_REX} ]]; then
         EPIC=$(echo ${LINE} | sed -e 's@'${EPIC_REX}'@@')
         echo "Epic: ${EPIC}"
-        RES=$(jira epic create --noedit -p ${PROJECT} -o summary="${EPIC}" -o "epic-name"="${EPIC}")
-        EPIC_ID=$(echo ${RES} | awk '{print $2}')
+        EPIC_TMPFILE=$(prepare_epic ${PROJECT} "${EPIC}" "fooey_desc")
+        echo "EPIC_TMPFILE: ${EPIC_TMPFILE}"
+        RES=$(bash -c "./test_cli.sh ${EPIC_TMPFILE}")
+        EPIC_ID=$(echo ${RES} | jq -r '.key')
         echo "RES: ${RES}"
         echo "EPIC_ID: ${EPIC_ID}"
     fi
@@ -91,15 +145,6 @@ while read "LINE"; do
         STORY=$(echo ${LINE} | sed -e 's@'${STORY_REX}'@@')
         SUMMARY_FOUND=1
         STORY_FOUND=1
-        if [[ DEBUG -eq 1 ]]; then
-            CMD='jira create --noedit -p '${PROJECT}' -o summary="'${STORY}'"'
-            [[ ! -z ${EPIC_ID} ]] && CMD="${CMD} -o \"epiclink\"=\"${EPIC_ID}\""
-        else
-            RES=$(jira create --noedit -p ${PROJECT} -o summary="${STORY}" -o "epiclink"="${EPIC_ID}")
-            STORY_ID=$(echo ${RES} | awk '{print $2}')
-            echo "RES: ${RES}"
-            echo "STORY_ID: ${STORY_ID}"
-        fi
     fi
 
     SUBTASK_REX="^###[[:space:]]"
@@ -108,14 +153,6 @@ while read "LINE"; do
         SUBTASK=$(echo ${LINE} | sed -e 's@'${SUBTASK_REX}'@@')
         SUMMARY_FOUND=1
         SUBTASK_FOUND=1
-        if [[ DEBUG -eq 1 ]]; then
-            CMD='jira subtask --noedit -p '${PROJECT}' -o summary="'${SUBTASK}'"'
-        else	
-            RES=$(jira subtask --noedit -p ${PROJECT} -o summary="${SUBTASK}")
-            SUBTASK_ID=$(echo ${RES} | awk '{print $2}')
-            echo "RES: ${RES}"
-            echo "SUBTASK_ID: ${SUBTASK_ID}"
-        fi
     fi
 
 done < "${INFILE}"

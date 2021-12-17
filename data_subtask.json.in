@@ -1,0 +1,16 @@
+{
+    "fields": {
+       "project":
+       {
+          "key": "{{PROJECT}}"
+       },
+       "summary": "{{SUMMARY}}",
+       "description": "{{DESCRIPTION}}",
+       "issuetype": {
+          "name": "Sub-task"
+       },
+       "parent": {
+          "key": "{{PARENT_ID}}"
+       }
+   }
+}

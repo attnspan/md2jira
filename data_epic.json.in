@@ -1,0 +1,14 @@
+{
+    "fields": {
+       "project":
+       {
+          "key": "{{PROJECT}}"
+       },
+       "customfield_10011": "{{SUMMARY}}",
+       "summary": "{{SUMMARY}}",
+       "description": "{{DESCRIPTION}}",
+       "issuetype": {
+          "name": "Epic"
+       }
+   }
+}

@@ -15,6 +15,21 @@ CMD=''
 
 # @see https://j.mp/3qAGH1q for WTF about the three slashes (plus spaces) below
 
+find_issue() {
+    local SUMMARY=$(echo ${1} | tr ' ' '+')
+    local TOTAL=0
+    local KEY=''
+
+    CMD="./jira_api_get.sh 'search?jql=project=${PROJECT}+AND+summary~\"${SUMMARY}\"&fields=summary' | jq -r '[.total,.issues[].key] | @csv' 2>/dev/null | awk -F, '{print \$1, \$2}'"
+    read TOTAL KEY <<< $(bash -c "${CMD}")
+    if [ ! -z ${KEY} ]; then
+        KEY=$(echo ${KEY} | tr -d '"')
+    fi
+    local RES=$?
+    #echo "RES: ${RES}, TOTAL: ${TOTAL}, KEY: "$(echo ${KEY} | tr -d '"')
+    echo ${TOTAL} ${KEY}
+}
+
 prepare_epic() {
     local PROJECT=${1:-DRT}
     local SUMMARY=${2}
@@ -90,36 +105,46 @@ get_description() {
 
 while read "LINE"; do
 
-    echo "LINE (${SUMMARY_FOUND}): ${LINE}"
+    # echo "LINE (${SUMMARY_FOUND}): ${LINE}"
 
     if [[ ${SUMMARY_FOUND} -eq 1 ]]; then
         get_description "${LINE}"
         RES=$?   
         if [[ ${RES} -eq 0 ]]; then
             DESCRIPTION=$(echo "${DESCRIPTION}" | sed -e 's@^[\]*\ \([[:alpha:]]\)@\1@g')
-            CMD+=" -o description='"${DESCRIPTION}"'"
-            if [[ ${SUBTASK_FOUND} -eq 1 ]]; then
-                CMD+=" ${STORY_ID}"
-            fi
-
-            # echo "${CMD}"
-            # Run actual command
-            # RES=$(bash -c "${CMD}")
 
             if [[ ${STORY_FOUND} -eq 1 ]]; then
-                STORY_TMPFILE=$(prepare_story ${PROJECT} ${EPIC_ID} "${STORY}" "${DESCRIPTION}")
-                RES=$(bash -c "./test_cli.sh ${STORY_TMPFILE}")
-                STORY_ID=$(echo ${RES} | jq -r '.key')
-                echo "${RES}"
-                echo "STORY_ID: ${STORY_ID}"
+
+                read KEYS_FOUND KEY <<< $(find_issue "${STORY}")
+                
+                if [[ ${KEYS_FOUND} = 0 ]]; then
+                    STORY_TMPFILE=$(prepare_story ${PROJECT} ${EPIC_ID} "${STORY}" "${DESCRIPTION}")
+                    RES=$(bash -c "./test_cli.sh ${STORY_TMPFILE}")
+                    STORY_ID=$(echo ${RES} | jq -r '.key')
+                    echo "${RES}"
+                    echo "STORY_ID: ${STORY_ID}"
+                else 
+                    echo "Story \"${KEY}: ${STORY}\" found, skipping ..."
+                fi
+
                 STORY_FOUND=0
+
             elif [[ ${SUBTASK_FOUND} ]]; then
-                SUBTASK_TMPFILE=$(prepare_subtask ${PROJECT} ${STORY_ID} "${SUBTASK}" "${DESCRIPTION}")
-                echo "SUBTASK_TMPFILE: ${SUBTASK_TMPFILE}"
-                RES=$(bash -c "./test_cli.sh ${SUBTASK_TMPFILE}")
-                SUBTASK_ID=$(echo ${RES} | jq -r '.key')
-                echo "SUBTASK_ID: ${SUBTASK_ID}"
+
+                read KEYS_FOUND KEY <<< $(find_issue "${SUBTASK}")
+                
+                if [[ ${KEYS_FOUND} = 0 ]]; then
+                    SUBTASK_TMPFILE=$(prepare_subtask ${PROJECT} ${STORY_ID} "${SUBTASK}" "${DESCRIPTION}")
+                    echo "SUBTASK_TMPFILE: ${SUBTASK_TMPFILE}"
+                    RES=$(bash -c "./test_cli.sh ${SUBTASK_TMPFILE}")
+                    SUBTASK_ID=$(echo ${RES} | jq -r '.key')
+                    echo "SUBTASK_ID: ${SUBTASK_ID}"
+                else 
+                    echo "Sub-task \"${KEY}: ${SUBTASK}\" found, skipping ..."
+                fi
+
                 SUBTASK_FOUND=0
+
             fi
             SUMMARY_FOUND=0
         fi
@@ -131,12 +156,21 @@ while read "LINE"; do
     if [[ ${LINE} =~ ${EPIC_REX} ]]; then
         EPIC=$(echo ${LINE} | sed -e 's@'${EPIC_REX}'@@')
         echo "Epic: ${EPIC}"
-        EPIC_TMPFILE=$(prepare_epic ${PROJECT} "${EPIC}" "fooey_desc")
-        echo "EPIC_TMPFILE: ${EPIC_TMPFILE}"
-        RES=$(bash -c "./test_cli.sh ${EPIC_TMPFILE}")
-        EPIC_ID=$(echo ${RES} | jq -r '.key')
-        echo "RES: ${RES}"
-        echo "EPIC_ID: ${EPIC_ID}"
+
+        read KEYS_FOUND KEY <<< $(find_issue "${EPIC}")
+
+        if [[ ${KEYS_FOUND} = 0 ]]; then
+            echo "EPIC NOT FOUND"
+            EPIC_TMPFILE=$(prepare_epic ${PROJECT} "${EPIC}" "fooey_desc")
+            echo "EPIC_TMPFILE: ${EPIC_TMPFILE}"
+            RES=$(bash -c "./test_cli.sh ${EPIC_TMPFILE}")
+            EPIC_ID=$(echo ${RES} | jq -r '.key')
+            echo "RES: ${RES}"
+            echo "EPIC_ID: ${EPIC_ID}"
+        else 
+            echo "EPIC \"${KEY}: ${EPIC}\" FOUND"
+        fi
+        
     fi
 
     STORY_REX="^##[[:space:]]"

@@ -19,13 +19,33 @@ find_issue() {
     local TOTAL=0
     local KEY=''
 
-    CMD="./jira_api_get.sh 'search?jql=project=${PROJECT}+AND+summary~\"${SUMMARY}\"&fields=summary' | jq -r '[.total,.issues[].key] | @csv' 2>/dev/null | awk -F, '{print \$1, \$2}'"
+    CMD="./jira_api_get.sh 'search?jql=project=${PROJECT}+AND+summary~\"${SUMMARY}\"&fields=summary,description' | jq -r '[.total,.issues[].key] | @csv' 2>/dev/null | awk -F, '{print \$1, \$2}'"
     read TOTAL KEY <<< $(bash -c "${CMD}")
     if [ ! -z ${KEY} ]; then
         KEY=$(echo ${KEY} | tr -d '"')
     fi
     local RES=$?
     echo ${TOTAL} ${KEY}
+}
+
+get_issue() {
+    local KEY=${1}
+    local SUMMARY=''
+    local DESCRIPTION=''
+    local PRIORITY=''
+
+    CMD="./jira_api_get.sh 'issue/${KEY}?fields=summary,description,priority'"
+    ISSUE_JSON=$(bash -c "${CMD}")
+    RES=$?
+
+    if [ ${RES} -eq 0 ]; then
+        SUMMARY=$(echo ${ISSUE_JSON} | jq -r '.fields.summary')
+        DESCRIPTION=$(echo ${ISSUE_JSON} | jq -r '.fields.description')
+        PRIORITY=$(echo ${ISSUE_JSON} | jq '.fields.priority.name')
+    fi
+
+    echo -E "${SUMMARY}" "${DESCRIPTION}" ${PRIORITY}
+
 }
 
 prepare_epic() {
@@ -135,7 +155,6 @@ update_issue_cache() {
     local ISSUE_CACHE_FILE='./.md2jira_cache.tsv'
     local TMP_ISSUE_CACHE_FILE=$(mktemp)
 
-    #ISSUE_HASH=$(echo -n "${SUMMARY}:${DESCRIPTION}" | md5 | tr -d '\n')
     ISSUE_HASH=$(generate_issue_hash "${SUMMARY}" "${DESCRIPTION}")
 
     [ ! -f .md2jira_cache.tsv ] && touch ${ISSUE_CACHE_FILE}
@@ -157,52 +176,47 @@ while read "LINE"; do
             # TODO: Remember what this regex does
             DESCRIPTION=$(echo "${DESCRIPTION}" | sed -e 's@^[\]*\ \([[:alpha:]]\)@\1@g')
 
-            if [[ ${STORY_FOUND} -eq 1 ]]; then
+            read KEYS_FOUND KEY <<< $(find_issue "${SUMMARY}")
 
-                read KEYS_FOUND KEY <<< $(find_issue "${STORY}")
+            if [[ ${KEYS_FOUND} = 1 ]]; then
+                # Double check for remote update 
+                TEST=$(get_issue ${KEY})
+                echo "TEST: ${TEST}"
+                #get_issue ${KEY}
 
-                if [[ ${KEYS_FOUND} = 1 ]]; then
-                    # Check if DESCRIPTION has been updated
-                    ISSUE_HASH=$(generate_issue_hash "${STORY}" "${DESCRIPTION}")
-                    if check_issue_cache_hash ${KEY} ${ISSUE_HASH}; then
-                        echo "${KEY} hash MATCH ... ${ISSUE_HASH}"
-                    else
-                        echo "${KEY} hash MISMATCH ... ${ISSUE_HASH}"
-                        # TODO: START_HERE_NEXT
-                        # 1. Update JIRA issue with new description
-
-                        # 2. Update issue cache
-                        update_issue_cache ${KEY} "${STORY}" "${DESCRIPTION}"
-                    fi
-                else
-                     # TODO: Deal with next line assuming EPIC_ID exists
-                    STORY_TMPFILE=$(prepare_story ${PROJECT} ${EPIC_ID} "${STORY}" "${DESCRIPTION}")
-                    RES=$(bash -c "./test_cli.sh ${STORY_TMPFILE}")
-                    STORY_ID=$(echo ${RES} | jq -r '.key')
-                    echo "${RES}"
-                    echo "STORY_ID: ${STORY_ID}"
+                if [[ "${UPSTREAM_SUMMARY}" != "${SUMMARY}" ]]; then
+                    echo "SUMMARY MISMATCH for ${KEY}"
+                    echo "U: ${UPSTREAM_SUMMARY}"
+                    echo "L: ${SUMMARY}"
                 fi
-                
-                STORY_FOUND=0
 
-            elif [[ ${SUBTASK_FOUND} ]]; then
+                # Check if DESCRIPTION has been updated
+                ISSUE_HASH=$(generate_issue_hash "${SUMMARY}" "${DESCRIPTION}")
+                if check_issue_cache_hash ${KEY} ${ISSUE_HASH}; then
+                    echo "${KEY} hash MATCH ... ${ISSUE_HASH}"
+                else
+                    echo "${KEY} hash MISMATCH ... ${ISSUE_HASH}"
+                    # TODO: START_HERE_NEXT
+                    # 1. Update JIRA issue with new description
 
-                read KEYS_FOUND KEY <<< $(find_issue "${SUBTASK}")
-                
-                if [[ ${KEYS_FOUND} = 0 ]]; then
-                    SUBTASK_TMPFILE=$(prepare_subtask ${PROJECT} ${STORY_ID} "${SUBTASK}" "${DESCRIPTION}")
-                    echo "SUBTASK_TMPFILE: ${SUBTASK_TMPFILE}"
-                    RES=$(bash -c "./test_cli.sh ${SUBTASK_TMPFILE}")
+                    # 2. Update issue cache
+                    update_issue_cache ${KEY} "${SUMMARY}" "${DESCRIPTION}"
+                fi
+            else
+                if [[ ${STORY_FOUND} -eq 1 ]]; then
+                    # TODO: Deal with next line assuming EPIC_ID exists
+                    STORY_TMPFILE=$(prepare_story ${PROJECT} ${EPIC_ID} "${SUMMARY}" "${DESCRIPTION}")
+                    RES=$(bash -c "./jira_api_post.sh ${STORY_TMPFILE}")
+                    STORY_ID=$(echo ${RES} | jq -r '.key')
+                    echo "STORY_ID: ${STORY_ID}"
+                    STORY_FOUND=0
+                elif [[ ${SUBTASK_FOUND} -eq 1 ]]; then
+                    SUBTASK_TMPFILE=$(prepare_subtask ${PROJECT} ${STORY_ID} "${SUMMARY}" "${DESCRIPTION}")
+                    RES=$(bash -c "./jira_api_post.sh ${SUBTASK_TMPFILE}")
                     SUBTASK_ID=$(echo ${RES} | jq -r '.key')
                     echo "SUBTASK_ID: ${SUBTASK_ID}"
-                else 
-                    echo "Sub-task \"${KEY}: ${SUBTASK}\" found, skipping ..."
-                    # Write md5 of ticket to cache
-                    update_issue_cache ${KEY} "${SUBTASK}" "${DESCRIPTION}"
+                    SUBTASK_FOUND=0
                 fi
-
-                SUBTASK_FOUND=0
-
             fi
             SUMMARY_FOUND=0
         fi
@@ -222,7 +236,7 @@ while read "LINE"; do
                 echo "EPIC NOT FOUND"
                 EPIC_TMPFILE=$(prepare_epic ${PROJECT} "${EPIC}" "${TMP_DESCRIPTION}")
                 echo "EPIC_TMPFILE: ${EPIC_TMPFILE}"
-                RES=$(bash -c "./test_cli.sh ${EPIC_TMPFILE}")
+                RES=$(bash -c "./jira_api_post.sh ${EPIC_TMPFILE}")
                 EPIC_ID=$(echo ${RES} | jq -r '.key')
                 echo "RES: ${RES}"
                 echo "EPIC_ID: ${EPIC_ID}"
@@ -239,7 +253,7 @@ while read "LINE"; do
     STORY_REX="^##[[:space:]]"
     if [[ ${LINE} =~ ${STORY_REX} ]]; then
         echo "Story: ${LINE}"
-        STORY=$(echo ${LINE} | sed -e 's@'${STORY_REX}'@@')
+        SUMMARY=$(echo ${LINE} | sed -e 's@'${STORY_REX}'@@')
         SUMMARY_FOUND=1
         STORY_FOUND=1
     fi
@@ -247,7 +261,7 @@ while read "LINE"; do
     SUBTASK_REX="^###[[:space:]]"
     if [[ ${LINE} =~ ${SUBTASK_REX} ]]; then
         echo "Subtask: ${LINE}"
-        SUBTASK=$(echo ${LINE} | sed -e 's@'${SUBTASK_REX}'@@')
+        SUMMARY=$(echo ${LINE} | sed -e 's@'${SUBTASK_REX}'@@')
         SUMMARY_FOUND=1
         SUBTASK_FOUND=1
     fi

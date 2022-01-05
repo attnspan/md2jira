@@ -22,7 +22,7 @@ class MD2Jira:
         self.parent_id  = ''
 
     def jira_http_call(self, url, verb='GET', body=''):
-        if verb == 'GET':
+        if verb == 'GET' or verb == 'DELETE':
             resp = self.http.request(
                 verb,
                 url,
@@ -60,20 +60,27 @@ class MD2Jira:
 
     def read_issue(self, issue_key): 
         """Read issue directly via JIRA 'issue' API"""
-        url  = '{}/issue/{}?fields=summary,description,priority'.format(self.baseurl, issue_key)
+        url  = '{}/issue/{}?fields=summary,description,priority,issuetype'.format(self.baseurl, issue_key)
         resp = self.jira_http_call(url)
-        json_loads = json.loads(resp.data.decode('utf-8'))['fields']
-        print (json.dumps(json_loads, indent=2))
-        return json_loads
+        json_loads = json.loads(resp.data.decode('utf-8'))
+        if 'fields' in json_loads:
+            fields = json_loads['fields']
+            issue = Issue(
+                IssueType.__dict__[fields['issuetype']['name'].upper().replace('-','')],
+                json_loads['key'],
+                fields['summary'],
+                fields['description']
+            )
+            return issue
+        return None
 
     def update_issue(self, issue, issue_json):
         """Update existing issue directly via JIRA 'issue' API"""
         url  = '{}/issue/{}'.format(self.baseurl, issue.key)
-        print(json.dumps(issue_json, indent=2))
         resp = self.jira_http_call(url, 'PUT', issue_json)
-        if 'status' in resp and resp.status == 204:
+        if hasattr(resp, 'status') and resp.status == 204:
             updated_issue = Issue(
-                IssueType.__dict__[issue.type.upper().replace('-','')],
+                IssueType.__dict__[issue.type.name.upper().replace('-','')],
                 issue.key,
                 issue.summary,
                 issue.description
@@ -81,9 +88,15 @@ class MD2Jira:
             return updated_issue
         return None
 
+    def delete_issue(self, issue):
+        """Delete issue directly via JIRA 'issue' API"""
+        url  = '{}/issue/{}'.format(self.baseurl, issue.key)
+        resp = self.jira_http_call(url, 'DELETE')
+        return resp
+
     def find_issue(self, issue): 
         """Locate issue via JIRA 'search' API"""
-        url        ='{}/search?jql=project=DRT+AND+summary~\"{}\"&fields=summary,description,issuetype'.format(self.baseurl, issue.summary.replace(' ', '+'))
+        url        ='{}/search?jql=project=DRT+AND+summary~\"{}\"&fields=summary,description,priority,issuetype'.format(self.baseurl, issue.summary.replace(' ', '+'))
         resp       = self.jira_http_call(url)
         json_loads = json.loads(resp.data.decode('utf-8'))
 

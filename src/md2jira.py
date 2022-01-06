@@ -2,8 +2,6 @@
 
 import os
 from dotenv import load_dotenv
-import argparse
-import sys
 import re
 import tempfile
 from enum import Enum
@@ -13,8 +11,8 @@ import json
 import hashlib
 
 class MD2Jira:
-    def __init__(self): 
-        self.mdfile     = sys.argv[1]
+    def __init__(self, args): 
+        self.args       = args
         self.baseurl    = 'https://decagamesx.atlassian.net/rest/api/2'
         self.http       = urllib3.PoolManager(ca_certs=certifi.where())
         self.epic_re    = re.compile(r'^#\s+')
@@ -92,7 +90,7 @@ class MD2Jira:
 
     def find_issue(self, issue): 
         """Locate issue via JIRA 'search' API"""
-        url        ='{}/search?jql=project=DRT+AND+summary~\"{}\"&fields=summary,description,priority,issuetype'.format(self.baseurl, issue.summary.replace(' ', '+'))
+        url        ='{}/search?jql=project={}+AND+summary~\"{}\"&fields=summary,description,priority,issuetype'.format(self.baseurl, self.args.JIRA_PROJECT_KEY, issue.summary.replace(' ', '+'))
         resp       = self.jira_http_call(url)
         json_loads = json.loads(resp.data.decode('utf-8'))
 
@@ -112,7 +110,7 @@ class MD2Jira:
         return None
 
     def parse_markdown(self):
-        fh           = open(self.mdfile, 'r')
+        fh           = open(self.args.INFILE, 'r')
         lines        = fh.readlines()
         issues       = []
         issue_type   = IssueType.NONE
@@ -215,7 +213,7 @@ class MD2Jira:
         in_file     = open(in_filename, 'r')
         lines       = ''.join(in_file.readlines())
         lines       = lines.replace(
-            '{{PROJECT}}', 'DRT').replace(
+            '{{PROJECT}}', self.args.JIRA_PROJECT_KEY).replace(
                 '{{SUMMARY}}', issue.summary).replace(
                     '{{DESCRIPTION}}', issue.description.strip().replace('\n', '\\n'))
         # TODO ... 

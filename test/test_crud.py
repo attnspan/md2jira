@@ -1,10 +1,15 @@
 import pytest
 import urllib3
+import argparse
 from src.md2jira import MD2Jira, Issue, IssueType
+
+pytest.args = argparse.ArgumentParser()
+pytest.args.INFILE = 'example.md'
+pytest.args.JIRA_PROJECT_KEY = 'DRT'
 
 class TestMD2JIRA:
     def test_create(self):
-        md2jira    = MD2Jira()
+        md2jira    = MD2Jira(pytest.args)
         issue      = Issue(IssueType.EPIC, '', 'pytest_issue_001', 'description')
         issue_data = md2jira.prepare_issue(issue)
         result     = md2jira.create_issue(issue, issue_data)
@@ -17,7 +22,7 @@ class TestMD2JIRA:
         assert result.key != ''
 
     def test_update(self):
-        md2jira    = MD2Jira()
+        md2jira    = MD2Jira(pytest.args)
         issue      = pytest.issue
         issue.description = 'i have changed this thing'
         issue_data = md2jira.prepare_issue(issue)
@@ -31,7 +36,7 @@ class TestMD2JIRA:
         assert result.description == issue.description
 
     def test_read(self):
-        md2jira    = MD2Jira()
+        md2jira    = MD2Jira(pytest.args)
         result     = md2jira.read_issue(pytest.issue_key)
         assert result != None
         assert type(result) == Issue
@@ -42,7 +47,7 @@ class TestMD2JIRA:
         assert result.description == 'i have changed this thing'
 
     def test_find(self):
-        md2jira    = MD2Jira()
+        md2jira    = MD2Jira(pytest.args)
         result     = md2jira.find_issue(pytest.issue)
         assert result != None
         assert type(result) == Issue
@@ -53,7 +58,7 @@ class TestMD2JIRA:
         assert result.description == 'i have changed this thing'
 
     def test_delete(self):
-        md2jira    = MD2Jira()
+        md2jira    = MD2Jira(pytest.args)
         issue      = Issue(IssueType.EPIC, pytest.issue_key)
         result     = md2jira.delete_issue(issue)
         assert type(result) == urllib3.response.HTTPResponse

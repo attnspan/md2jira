@@ -1,7 +1,6 @@
 import pytest
 import urllib3
-import md2jira
-from md2jira import MD2Jira, Issue, IssueType
+from src.md2jira import MD2Jira, Issue, IssueType
 
 class TestMD2JIRA:
     def test_create(self):

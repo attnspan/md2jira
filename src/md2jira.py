@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
 import os
+from dotenv import load_dotenv
+import argparse
 import sys
 import re
 import tempfile
@@ -20,26 +22,20 @@ class MD2Jira:
         self.subtask_re = re.compile(r'^###\s+')
         self.epic_id    = ''
         self.parent_id  = ''
+        load_dotenv()
 
     def jira_http_call(self, url, verb='GET', body=''):
+
+        req_headers={
+            'Content-Type': 'application/json',
+            'Authorization': 'Basic {}'.format(os.environ.get('JIRA_AUTH_KEY'))
+        }
+
         if verb == 'GET' or verb == 'DELETE':
-            resp = self.http.request(
-                verb,
-                url,
-                headers={
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Basic ZGFuQGRlY2FnYW1lcy5jb206ZGpRaTVlYjdPTDZZOVdiRVpXSncxRkFG'
-                })
+            resp = self.http.request(verb, url, headers=req_headers)
         else:
             encoded_data = body.encode('utf-8')
-            resp         = self.http.request(
-                verb,
-                url,
-                body=encoded_data,
-                headers={
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Basic ZGFuQGRlY2FnYW1lcy5jb206ZGpRaTVlYjdPTDZZOVdiRVpXSncxRkFG'
-                })
+            resp         = self.http.request(verb, url, headers=req_headers, body=encoded_data)
 
         return resp
 
@@ -280,8 +276,3 @@ class ParserState(Enum):
     NONE                = 0 
     DETECT_ISSUE        = 1
     COLLECT_DESCRIPTION = 2
-
-if __name__=="__main__":
-    md2jira = MD2Jira()
-    md2jira.read_issue('DRT-332')
-    md2jira.parse_markdown()

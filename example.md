@@ -1,29 +1,27 @@
-# Test Epic 001
+# Such Epic, Wow!
 
-fooey_description
+Generate an _Epic_ issue by using _Markdown_'s `#` i.e. `H1` prefix
 
-## I Don't Exist Yet
+## Our First Story
 
-blah blah
-
-multiline yay yay yay
-
-## Distribute Builds via App Center
+Generate a _Story_ issue by using _Markdown_'s `##` i.e. `H2` prefix
 
 h3. Summary
 
-oy, oi?
+Note the use of the `h3.` prefix above, which will be translated by JIRA into _Header 3_ format.
 
-h3. Requirements
+h3. Another Section
+
+The following will translate into a bulleted list: 
 
 * 123
 * 456
-* 789
+* 999
 
-### Jenkins iOS Builds
+### Subtask A
 
-xxxyyy
+Generate a _Sub-task_ issue by using _Markdown_'s `###` i.e. `H3` prefix
 
-### Jenkins Android Builds
+### Subtask B
 
-hello
+Thanks for playing!

@@ -6,6 +6,7 @@ import re
 import tempfile
 from enum import Enum
 import urllib3
+from urllib.parse import urlencode, quote
 import certifi
 import json
 import hashlib
@@ -90,14 +91,22 @@ class MD2Jira:
 
     def find_issue(self, issue): 
         """Locate issue via JIRA 'search' API"""
-        url        ='{}/search?jql=project={}+AND+summary~\"{}\"&fields=summary,description,priority,issuetype'.format(self.baseurl, self.args.JIRA_PROJECT_KEY, issue.summary.replace(' ', '+'))
-        resp       = self.jira_http_call(url)
-        json_loads = json.loads(resp.data.decode('utf-8'))
+        summary_encoded = issue.summary.replace('!','\\\\!')
+        url         ='{}/search?jql=project={}+AND+summary~\"{}\"&fields=summary,description,priority,issuetype'.format(self.baseurl, self.args.JIRA_PROJECT_KEY, summary_encoded.replace(' ', '+'))
+        resp        = self.jira_http_call(url)
+        json_loads  = json.loads(resp.data.decode('utf-8'))
+        found_issue = None
 
-        if 'issues' in json_loads and len(json_loads['issues']) == 1:
-            issues = json_loads['issues'][-1]
-            key    = issues['key']
-            fields = issues['fields']
+        if 'issues' in json_loads: 
+            found_issues = json_loads['issues']
+            if len(found_issues) > 1:
+                # Account for JQL `~` operator returning similar results
+                actual_issue = [i for i in found_issues if i['fields']['summary'] == issue.summary][-1]
+            else: 
+                actual_issue = found_issues[-1]
+
+            key    = actual_issue['key']
+            fields = actual_issue['fields']
     
             found_issue =  Issue(
                 # TODO: Learn magic, cleaner way to this
@@ -192,6 +201,10 @@ class MD2Jira:
             issue_data   = self.prepare_issue(issue)
             create_issue = self.create_issue(issue, issue_data)
 
+            if create_issue is not None and create_issue.type is IssueType.EPIC:
+                self.epic_id   = create_issue.key
+            if create_issue is not None and create_issue.type is IssueType.STORY:
+                self.parent_id = create_issue.key
             # * Update issue cache
             self.update_issue_cache(create_issue)
 

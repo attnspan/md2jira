@@ -7,8 +7,8 @@ from src.md2jira import MD2Jira, Issue, IssueType
 pytest.args = argparse.ArgumentParser()
 pytest.args.INFILE = 'example.md'
 pytest.args.JIRA_PROJECT_KEY = 'DRT'
-pytest.issue = Issue(IssueType.EPIC, '', 'holy, bagumba!', 'description')
-pytest.updated_description = 'updated description'
+pytest.issue = Issue(IssueType.Epic, '', 'holy, bagumba!', 'description has `TEST`')
+pytest.updated_description = 'updated description with `another formatting challenge`'
 
 class TestMD2JIRA:
     def test_create(self):
@@ -21,7 +21,7 @@ class TestMD2JIRA:
             pytest.issue_key = result.key
         assert result != None
         assert type(result) == Issue
-        assert result.type == IssueType.EPIC
+        assert result.type == IssueType.Epic
         assert result.key != ''
 
     def test_update(self):
@@ -32,7 +32,7 @@ class TestMD2JIRA:
         result     = md2jira.update_issue(issue, issue_data)
         assert result != None
         assert type(result) == Issue
-        assert result.type == IssueType.EPIC
+        assert result.type == IssueType.Epic
         assert result.key != ''
         assert result.key == issue.key
         assert result.summary == issue.summary
@@ -43,7 +43,7 @@ class TestMD2JIRA:
         result     = md2jira.read_issue(pytest.issue_key)
         assert result != None
         assert type(result) == Issue
-        assert result.type == IssueType.EPIC
+        assert result.type == IssueType.Epic
         assert result.key != ''
         assert result.key == pytest.issue_key
         assert result.summary == pytest.issue.summary
@@ -54,7 +54,7 @@ class TestMD2JIRA:
         result     = md2jira.find_issue(pytest.issue)
         assert result != None
         assert type(result) == Issue
-        assert result.type == IssueType.EPIC
+        assert result.type == IssueType.Epic
         assert result.key != ''
         assert result.key == pytest.issue_key
         assert result.summary == pytest.issue.summary
@@ -62,7 +62,7 @@ class TestMD2JIRA:
 
     def test_delete(self):
         md2jira    = MD2Jira(pytest.args)
-        issue      = Issue(IssueType.EPIC, pytest.issue_key)
+        issue      = Issue(IssueType.Epic, pytest.issue_key)
         result     = md2jira.delete_issue(issue)
         assert type(result) == urllib3.response.HTTPResponse
         assert result.reason == 'No Content'

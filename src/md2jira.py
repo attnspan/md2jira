@@ -45,10 +45,10 @@ class MD2Jira:
         json_loads = json.loads(resp.data.decode('utf-8'))
         if 'key' in json_loads:
             created_issue = Issue(
-                IssueType.__dict__[issue.type.name.upper().replace('-','')],
+                IssueType.__dict__[issue.type.name.replace('-','')],
                 json_loads['key'],
                 issue.summary,
-                issue.description
+                issue.description.replace('`','\\`')
             )
             return created_issue
         return None
@@ -61,7 +61,7 @@ class MD2Jira:
         if 'fields' in json_loads:
             fields = json_loads['fields']
             issue = Issue(
-                IssueType.__dict__[fields['issuetype']['name'].upper().replace('-','')],
+                IssueType.__dict__[fields['issuetype']['name'].replace('-','')],
                 json_loads['key'],
                 fields['summary'],
                 fields['description']
@@ -75,7 +75,7 @@ class MD2Jira:
         resp = self.jira_http_call(url, 'PUT', issue_json)
         if hasattr(resp, 'status') and resp.status == 204:
             updated_issue = Issue(
-                IssueType.__dict__[issue.type.name.upper().replace('-','')],
+                IssueType.__dict__[issue.type.name.replace('-','')],
                 issue.key,
                 issue.summary,
                 issue.description
@@ -97,7 +97,7 @@ class MD2Jira:
         json_loads  = json.loads(resp.data.decode('utf-8'))
         found_issue = None
 
-        if 'issues' in json_loads: 
+        if 'issues' in json_loads and len(json_loads['issues']) > 0: 
             found_issues = json_loads['issues']
             if len(found_issues) > 1:
                 # Account for JQL `~` operator returning similar results
@@ -110,7 +110,7 @@ class MD2Jira:
     
             found_issue =  Issue(
                 # TODO: Learn magic, cleaner way to this
-                IssueType.__dict__[fields['issuetype']['name'].upper().replace('-','')],
+                IssueType.__dict__[fields['issuetype']['name'].replace('-','')],
                 key,
                 fields['summary'],
                 fields['description']
@@ -131,17 +131,17 @@ class MD2Jira:
             stripped   = line.strip()
             issue_type = self.detect_issue(stripped)
 
-            if issue_type is IssueType.EPIC:
+            if issue_type is IssueType.Epic:
                 summary = '{}'.format(re.sub(self.epic_re, '', stripped))
                 stripped = 'EPIC FOUND: {}'.format(re.sub(self.epic_re, '', stripped))
-            elif issue_type is IssueType.STORY:
+            elif issue_type is IssueType.Story:
                 summary = '{}'.format(re.sub(self.story_re, '', stripped))
                 stripped = 'STORY FOUND: {}'.format(re.sub(self.story_re, '', stripped))
             elif issue_type is IssueType.SUBTASK:
                 summary = '{}'.format(re.sub(self.subtask_re, '', stripped))
                 stripped = 'SUBTASK FOUND: {}'.format(re.sub(self.subtask_re, '', stripped))
 
-            if parser_state is ParserState.DETECT_ISSUE and issue_type in [IssueType.EPIC, IssueType.STORY, IssueType.SUBTASK]:
+            if parser_state is ParserState.DETECT_ISSUE and issue_type in [IssueType.Epic, IssueType.Story, IssueType.SUBTASK]:
                 issues.append(Issue(issue_type, '', summary))
                 parser_state = ParserState.COLLECT_DESCRIPTION
 
@@ -162,9 +162,9 @@ class MD2Jira:
         issue_type = IssueType.NONE
 
         if self.epic_re.match(str):
-            issue_type = IssueType.EPIC
+            issue_type = IssueType.Epic
         elif self.story_re.match(str):
-            issue_type = IssueType.STORY
+            issue_type = IssueType.Story
         elif self.subtask_re.match(str):
             issue_type = IssueType.SUBTASK
         
@@ -173,9 +173,9 @@ class MD2Jira:
     def process_issue(self, issue): 
         remote_issue = self.find_issue(issue)
         if remote_issue != None:
-            if remote_issue.type is IssueType.EPIC:
+            if remote_issue.type is IssueType.Epic:
                 self.epic_id = remote_issue.key
-            if remote_issue.type is IssueType.STORY:
+            if remote_issue.type is IssueType.Story:
                 self.parent_id = remote_issue.key
             issue.key = remote_issue.key
 
@@ -201,9 +201,9 @@ class MD2Jira:
             issue_data   = self.prepare_issue(issue)
             create_issue = self.create_issue(issue, issue_data)
 
-            if create_issue is not None and create_issue.type is IssueType.EPIC:
+            if create_issue is not None and create_issue.type is IssueType.Epic:
                 self.epic_id   = create_issue.key
-            if create_issue is not None and create_issue.type is IssueType.STORY:
+            if create_issue is not None and create_issue.type is IssueType.Story:
                 self.parent_id = create_issue.key
             # * Update issue cache
             self.update_issue_cache(create_issue)
@@ -222,21 +222,27 @@ class MD2Jira:
 
     def prepare_issue(self, issue): 
         """Prepare JSON data to send to JIRA API"""
-        in_filename = 'data_{}.json.in'.format(issue.type.name.lower())
-        in_file     = open(in_filename, 'r')
-        lines       = ''.join(in_file.readlines())
-        lines       = lines.replace(
-            '{{PROJECT}}', self.args.JIRA_PROJECT_KEY).replace(
-                '{{SUMMARY}}', issue.summary).replace(
-                    '{{DESCRIPTION}}', issue.description.strip().replace('\n', '\\n'))
-        # TODO ... 
-        # * Account for story, subtask issues
-        # * Figure out how to share EPIC_ID, PARENT_ID values
-        if issue.type is IssueType.STORY:
-            lines = lines.replace('{{EPIC_ID}}', self.epic_id)
-        if issue.type is IssueType.SUBTASK:
-            lines = lines.replace('{{PARENT_ID}}', self.parent_id)
-        return lines
+        out_json    = {
+            'fields': {
+                'project': {
+                    'key': self.args.JIRA_PROJECT_KEY
+                },
+                'summary': issue.summary,
+                'description': issue.description.strip().replace('\n', '\\n'),
+                'issuetype': {
+                    'name': issue.type.name
+                }
+            }
+        }
+
+        if issue.type is IssueType.Epic:
+            out_json['fields']['customfield_10011'] = issue.summary
+        if issue.type is IssueType.Story and len(self.epic_id) > 0:
+            out_json['fields']['customfield_10014'] = self.epic_id
+        if issue.type is IssueType.SUBTASK and len(self.parent_id) > 0:
+            out_json['fields']['parent_id'] = self.parent_id
+
+        return json.dumps(out_json)
 
     def generate_issue_hash(self, summary, description): 
         str    = '{}:{}'.format(summary, description.strip())
@@ -279,8 +285,8 @@ class Issue:
 
 class IssueType(Enum):
     NONE    = 0
-    EPIC    = 1
-    STORY   = 2
+    Epic    = 1
+    Story   = 2
     SUBTASK = 3
 
 class ParserState(Enum):

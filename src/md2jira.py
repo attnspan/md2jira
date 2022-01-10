@@ -50,7 +50,7 @@ class MD2Jira:
                 IssueType.__dict__[issue.type.name.replace('-','')],
                 json_loads['key'],
                 issue.summary,
-                issue.description.replace('`','\\`')
+                issue.description
             )
             return created_issue
         return None
@@ -139,11 +139,11 @@ class MD2Jira:
             elif issue_type is IssueType.Story:
                 summary = '{}'.format(re.sub(self.story_re, '', stripped))
                 stripped = 'STORY FOUND: {}'.format(re.sub(self.story_re, '', stripped))
-            elif issue_type is IssueType.SUBTASK:
+            elif issue_type is IssueType.Subtask:
                 summary = '{}'.format(re.sub(self.subtask_re, '', stripped))
-                stripped = 'SUBTASK FOUND: {}'.format(re.sub(self.subtask_re, '', stripped))
+                stripped = 'Subtask FOUND: {}'.format(re.sub(self.subtask_re, '', stripped))
 
-            if parser_state is ParserState.DETECT_ISSUE and issue_type in [IssueType.Epic, IssueType.Story, IssueType.SUBTASK]:
+            if parser_state is ParserState.DETECT_ISSUE and issue_type in [IssueType.Epic, IssueType.Story, IssueType.Subtask]:
                 issues.append(Issue(issue_type, '', summary))
                 parser_state = ParserState.COLLECT_DESCRIPTION
 
@@ -168,7 +168,7 @@ class MD2Jira:
         elif self.story_re.match(str):
             issue_type = IssueType.Story
         elif self.subtask_re.match(str):
-            issue_type = IssueType.SUBTASK
+            issue_type = IssueType.Subtask
         
         return issue_type
 
@@ -228,15 +228,19 @@ class MD2Jira:
             project_key = self.args.JIRA_PROJECT_KEY
         else:
             project_key = os.environ.get('JIRA_PROJECT_KEY')
+
+        # Account for dash i.e '-' character in "Sub-task"
+        issue_type = 'Sub-task' if issue.type is IssueType.Subtask else issue.type.name
+
         out_json    = {
             'fields': {
                 'project': {
                     'key': project_key
                 },
                 'summary': issue.summary,
-                'description': issue.description.strip().replace('\n', '\\n'),
+                'description': issue.description.strip(),
                 'issuetype': {
-                    'name': issue.type.name
+                    'name': issue_type
                 }
             }
         }
@@ -245,8 +249,10 @@ class MD2Jira:
             out_json['fields']['customfield_10011'] = issue.summary
         if issue.type is IssueType.Story and len(self.epic_id) > 0:
             out_json['fields']['customfield_10014'] = self.epic_id
-        if issue.type is IssueType.SUBTASK and len(self.parent_id) > 0:
-            out_json['fields']['parent_id'] = self.parent_id
+        if issue.type is IssueType.Subtask and len(self.parent_id) > 0:
+            out_json['fields']['parent'] = { 
+                'key': self.parent_id
+            } 
 
         return json.dumps(out_json)
 
@@ -286,6 +292,8 @@ class Issue:
         self.type        = type
         self.summary     = summary
         self.description = description.strip()
+        self.epic_id     = None
+        self.parent_id   = None
         self.priority    = None
         self.assignee    = None
 
@@ -293,7 +301,7 @@ class IssueType(Enum):
     NONE    = 0
     Epic    = 1
     Story   = 2
-    SUBTASK = 3
+    Subtask = 3
 
 class ParserState(Enum):
     NONE                = 0 

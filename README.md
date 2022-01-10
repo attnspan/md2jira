@@ -31,7 +31,14 @@ JIRA_AUTH_KEY=$(echo -n ${JIRA_EMAIL}:${API_TOKEN} | base64 | tr -d '\n')
 `MD2Jira` stores your JIRA authentication key in a file called _.env_. Run the following command to put the `JIRA_AUTH_KEY` value you generated (above) into your _.env_ file: 
 
 ```
-echo "JIRA_AUTH_KEY = \"${JIRA_AUTH_KEY}\" > .env
+echo "JIRA_AUTH_KEY = \"${JIRA_AUTH_KEY}\"" > .env
+```
+
+You'll also want to add your default JIRA "Project KEY" to the _.env_ file. This is the prefix at the beginning of each JIRA issue, e.g. `GT` for _Game Transitions_
+
+```
+JIRA_PROJECT_KEY=<YOUR_JIRA_PROJECT_KEY>
+echo "JIRA_PROJECT_KEY = \"${JIRA_PROJECT_KEY}\"" >> .env
 ```
 
 ### Run Tests

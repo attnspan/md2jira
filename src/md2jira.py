@@ -222,10 +222,14 @@ class MD2Jira:
 
     def prepare_issue(self, issue): 
         """Prepare JSON data to send to JIRA API"""
+        if hasattr(self.args, 'JIRA_PROJECT_KEY'):
+            project_key = self.args.JIRA_PROJECT_KEY
+        else:
+            project_key = os.environ.get('JIRA_PROJECT_KEY')
         out_json    = {
             'fields': {
                 'project': {
-                    'key': self.args.JIRA_PROJECT_KEY
+                    'key': project_key
                 },
                 'summary': issue.summary,
                 'description': issue.description.strip().replace('\n', '\\n'),

@@ -34,11 +34,13 @@ JIRA_AUTH_KEY=$(echo -n ${JIRA_EMAIL}:${API_TOKEN} | base64 | tr -d '\n')
 echo "JIRA_AUTH_KEY = \"${JIRA_AUTH_KEY}\"" > .env
 ```
 
-You'll also want to add your default JIRA "Project KEY" to the _.env_ file. This is the prefix at the beginning of each JIRA issue, e.g. `GT` for _Game Transitions_
+You'll also want to add your default JIRA "Project KEY" and subdomain to the _.env_ file. This is the prefix at the beginning of each JIRA issue, e.g. `GT` for _Game Transitions_
 
 ```
 JIRA_PROJECT_KEY=<YOUR_JIRA_PROJECT_KEY>
+JIRA_PROJECT_SUBDOMAIN=<YOUR_JIRA_PROJECT_SUBDOMAIN>
 echo "JIRA_PROJECT_KEY = \"${JIRA_PROJECT_KEY}\"" >> .env
+echo "JIRA_PROJECT_SUBDOMAIN = \"${JIRA_PROJECT_SUBDOMAIN}\"" >> .env
 ```
 
 ### Run Tests

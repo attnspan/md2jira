@@ -13,15 +13,17 @@ import hashlib
 
 class MD2Jira:
     def __init__(self, args): 
+
+        load_dotenv()
+
         self.args       = args
-        self.baseurl    = 'https://decagamesx.atlassian.net/rest/api/2'
+        self.baseurl    = 'https://{}.atlassian.net/rest/api/2'.format(os.environ.get('JIRA_PROJECT_SUBDOMAIN'))
         self.http       = urllib3.PoolManager(ca_certs=certifi.where())
         self.epic_re    = re.compile(r'^#\s+')
         self.story_re   = re.compile(r'^##\s+')
         self.subtask_re = re.compile(r'^###\s+')
         self.epic_id    = ''
         self.parent_id  = ''
-        load_dotenv()
 
     def jira_http_call(self, url, verb='GET', body=''):
 

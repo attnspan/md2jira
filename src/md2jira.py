@@ -52,6 +52,10 @@ class MD2Jira:
                 issue.summary,
                 issue.description
             )
+            if issue.type is IssueType.Story and hasattr(issue, 'epic_id'):
+                created_issue.epic_id = issue.epic_id
+            if issue.type is IssueType.Subtask and hasattr(issue, 'parent_id'):
+                created_issue.parent_id = issue.parent_id
             return created_issue
         return None
 

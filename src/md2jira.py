@@ -16,14 +16,15 @@ class MD2Jira:
 
         load_dotenv()
 
-        self.args       = args
-        self.baseurl    = 'https://{}.atlassian.net/rest/api/2'.format(os.environ.get('JIRA_PROJECT_SUBDOMAIN'))
-        self.http       = urllib3.PoolManager(ca_certs=certifi.where())
-        self.epic_re    = re.compile(r'^#\s+')
-        self.story_re   = re.compile(r'^##\s+')
-        self.subtask_re = re.compile(r'^###\s+')
-        self.epic_id    = ''
-        self.parent_id  = ''
+        self.args         = args
+        self.baseurl      = 'https://{}.atlassian.net/rest/api/2'.format(os.environ.get('JIRA_PROJECT_SUBDOMAIN'))
+        self.http         = urllib3.PoolManager(ca_certs=certifi.where())
+        self.epic_re      = re.compile(r'^#\s+')
+        self.story_re     = re.compile(r'^##\s+')
+        self.subtask_re   = re.compile(r'^###\s+')
+        self.checklist_re = re.compile(r'^\* \[(.*)\] (.*)$')
+        self.epic_id      = ''
+        self.parent_id    = ''
 
     def jira_http_call(self, url, verb='GET', body=''):
 
@@ -37,6 +38,11 @@ class MD2Jira:
         else:
             encoded_data = body.encode('utf-8')
             resp         = self.http.request(verb, url, headers=req_headers, body=encoded_data)
+            if len(resp.data) > 0:
+                json_loads   = json.loads(resp.data.decode('utf-8'))
+                if 'errors' in json_loads:
+                    for error in json_loads['errors']:
+                        print('{}: {}'.format(error, json_loads['errors'][error]))
 
         return resp
 
@@ -152,8 +158,19 @@ class MD2Jira:
                 parser_state = ParserState.COLLECT_DESCRIPTION
 
             elif parser_state is ParserState.COLLECT_DESCRIPTION:
-                if issue_type is IssueType.NONE:
+
+                if issue_type is IssueType.Checklist:
+                    if hasattr(issues[-1], 'checklist') is False:
+                        issues[-1].checklist = Checklist()
+                    matches = re.match(self.checklist_re, stripped)
+                    status, item_text = matches.group(1, 2)
+                    status = ChecklistItemStatus.__dict__[status.upper().replace(' ','_')]
+                    item   = ChecklistItem(item_text, status)
+                    issues[-1].checklist.append(item)
+
+                elif issue_type is IssueType.NONE:
                     issues[-1].description += '{}\n'.format(stripped)
+
                 else:
                     self.process_issue(issues[-1])
                     issues.append(Issue(issue_type, '', summary))
@@ -173,6 +190,8 @@ class MD2Jira:
             issue_type = IssueType.Story
         elif self.subtask_re.match(str):
             issue_type = IssueType.Subtask
+        elif self.checklist_re.match(str):
+            issue_type = IssueType.Checklist
         
         return issue_type
 
@@ -257,8 +276,36 @@ class MD2Jira:
             out_json['fields']['parent'] = { 
                 'key': self.parent_id
             } 
+        
+        if hasattr(issue, 'checklist') and len(issue.checklist.items) > 0:
+            checklist_fields = self.format_checklist(issue.checklist)
+            for field in checklist_fields:
+                out_json['fields'][field] = checklist_fields[field]
 
         return json.dumps(out_json)
+
+    def format_checklist(self, checklist):
+        # @see https://is.gd/uhaViF
+        '''
+        # Default checklist
+        * [open] Checklist Item A
+        * [in progress] Checklist Item B
+        * [done] Checklist Item C
+        '''
+        output = {
+            'customfield_10262': '# Default Checklist\n', # raw format
+        }
+
+        checked_count = 0
+
+        for item in checklist.items:
+            if item.checked is True:
+                checked_count += 1
+            status = item.status.name.lower().replace('_', ' ')
+
+            output['customfield_10262'] += '[{}] {}\n'.format(status, item.text)
+
+        return output
 
     def generate_issue_hash(self, summary, description): 
         str    = '{}:{}'.format(summary, description.strip())
@@ -302,12 +349,33 @@ class Issue:
         self.assignee    = None
 
 class IssueType(Enum):
-    NONE    = 0
-    Epic    = 1
-    Story   = 2
-    Subtask = 3
+    NONE      = 0
+    Epic      = 1
+    Story     = 2
+    Subtask   = 3
+    Checklist = 4
 
 class ParserState(Enum):
     NONE                = 0 
     DETECT_ISSUE        = 1
     COLLECT_DESCRIPTION = 2
+    COLLECT_CHECKLIST   = 3
+
+class Checklist:
+    def __init__(self):
+        self.items  = []
+    def append(self, item):
+        self.items.append(item)
+
+class ChecklistItem:
+    def __init__(self, text, status):
+        self.text    = text
+        self.status  = status
+        self.checked = ChecklistItemStatus.__dict__[status.name.upper()] == ChecklistItemStatus.DONE
+
+class ChecklistItemStatus(Enum):
+    NONE        = 0
+    OPEN        = 1
+    IN_PROGRESS = 2
+    SKIPPED     = 3
+    DONE        = 4

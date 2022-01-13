@@ -25,3 +25,13 @@ Generate a _Sub-task_ issue by using _Markdown_'s `###` i.e. `H3` prefix
 ### Subtask B
 
 Thanks for playing!
+
+### Subtask C
+
+What's going to happen ggg? 
+
+TODO: Trigger changes if/when only checklist is updated, i.e. include checklist in issue hash calculation
+
+* [in progress] Checklist Item A
+* [in progress] Checklist Item B
+* [done] Checklist Item C

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import os
+import shutil
 from dotenv import load_dotenv
 import re
 import tempfile
@@ -67,7 +68,7 @@ class MD2Jira:
 
     def read_issue(self, issue_key): 
         """Read issue directly via JIRA 'issue' API"""
-        url  = '{}/issue/{}?fields=summary,description,priority,issuetype'.format(self.baseurl, issue_key)
+        url  = '{}/issue/{}?fields=summary,description,priority,issuetype,customfield_10262'.format(self.baseurl, issue_key)
         resp = self.jira_http_call(url)
         json_loads = json.loads(resp.data.decode('utf-8'))
         if 'fields' in json_loads:
@@ -76,7 +77,8 @@ class MD2Jira:
                 IssueType.__dict__[fields['issuetype']['name'].replace('-','')],
                 json_loads['key'],
                 fields['summary'],
-                fields['description']
+                fields['description'],
+                fields['customfield_10262'] 
             )
             return issue
         return None
@@ -90,7 +92,8 @@ class MD2Jira:
                 IssueType.__dict__[issue.type.name.replace('-','')],
                 issue.key,
                 issue.summary,
-                issue.description
+                issue.description,
+                issue.checklist.text
             )
             return updated_issue
         return None
@@ -104,7 +107,7 @@ class MD2Jira:
     def find_issue(self, issue): 
         """Locate issue via JIRA 'search' API"""
         summary_encoded = issue.summary.replace('!','\\\\!')
-        url         ='{}/search?jql=project={}+AND+summary~\"{}\"&fields=summary,description,priority,issuetype'.format(self.baseurl, self.args.JIRA_PROJECT_KEY, summary_encoded.replace(' ', '+'))
+        url         ='{}/search?jql=project={}+AND+summary~\"{}\"&fields=summary,description,priority,issuetype,customfield_10262'.format(self.baseurl, self.args.JIRA_PROJECT_KEY, summary_encoded.replace(' ', '+'))
         resp        = self.jira_http_call(url)
         json_loads  = json.loads(resp.data.decode('utf-8'))
         found_issue = None
@@ -125,7 +128,8 @@ class MD2Jira:
                 IssueType.__dict__[fields['issuetype']['name'].replace('-','')],
                 key,
                 fields['summary'],
-                fields['description']
+                fields['description'],
+                fields['customfield_10262'] 
             )
             return found_issue
         return None
@@ -137,7 +141,6 @@ class MD2Jira:
         issue_type   = IssueType.NONE
         parser_state = ParserState.DETECT_ISSUE
         summary      = None
-        description  = ''
 
         for line in lines:
             stripped   = line.strip()
@@ -164,18 +167,15 @@ class MD2Jira:
                         issues[-1].checklist = Checklist()
                     matches = re.match(self.checklist_re, stripped)
                     status, item_text = matches.group(1, 2)
-                    status = ChecklistItemStatus.__dict__[status.upper().replace(' ','_')]
                     item   = ChecklistItem(item_text, status)
                     issues[-1].checklist.append(item)
 
                 elif issue_type is IssueType.NONE:
-                    issues[-1].description += '{}\n'.format(stripped)
+                    issues[-1].description += '{}\n'.format(self.md2wiki(stripped))
 
                 else:
                     self.process_issue(issues[-1])
                     issues.append(Issue(issue_type, '', summary))
-
-            print ('XXX: {}'.format(stripped))
 
         # Process final issue
         self.process_issue(issues[-1])
@@ -212,7 +212,7 @@ class MD2Jira:
                 self.update_issue_cache(issue)
             else:
                 # * Check for description, etc changes
-                issue_hash   = self.generate_issue_hash(issue.summary, issue.description)
+                issue_hash   = self.generate_issue_hash(issue)
                 hashes_match = self.check_issue_cache_hash(issue.key, issue_hash)
                 if hashes_match is False:
                     # * Update issues via JIRA API
@@ -241,6 +241,9 @@ class MD2Jira:
             result = True
         # TODO: Figure out what to do about need to strip() descriptions
         if issue.description.strip() != remote_issue.description:
+            result = True
+
+        if issue.checklist.text != remote_issue.checklist.text:
             result = True
 
         return result
@@ -278,11 +281,25 @@ class MD2Jira:
             } 
         
         if hasattr(issue, 'checklist') and len(issue.checklist.items) > 0:
-            checklist_fields = self.format_checklist(issue.checklist)
-            for field in checklist_fields:
-                out_json['fields'][field] = checklist_fields[field]
+            checklist_text = self.format_checklist(issue.checklist)
+            out_json['fields']['customfield_10262'] = checklist_text
 
         return json.dumps(out_json)
+
+    def md2wiki(self, str):
+        """Convert certain markdown to JIRA Wiki format"""
+        regex = {
+            'link': re.compile(r'^(.*)\[([^\]]+)\]\(([^\)]+)\)(.*)$')
+        }
+        replacements = {
+            'link': r'\1[\2|\3]\4'
+        }
+
+        for format in regex:
+            matches = re.match(regex[format], str)
+            if matches is not None:
+                str     = re.sub(regex[format], replacements[format], str)
+        return str
 
     def format_checklist(self, checklist):
         # @see https://is.gd/uhaViF
@@ -292,23 +309,17 @@ class MD2Jira:
         * [in progress] Checklist Item B
         * [done] Checklist Item C
         '''
-        output = {
-            'customfield_10262': '# Default Checklist\n', # raw format
-        }
+        output = '# Default Checklist\n' # raw format
 
-        checked_count = 0
 
         for item in checklist.items:
-            if item.checked is True:
-                checked_count += 1
             status = item.status.name.lower().replace('_', ' ')
-
-            output['customfield_10262'] += '[{}] {}\n'.format(status, item.text)
+            output += '* [{}] {}\n'.format(status, item.text)
 
         return output
 
-    def generate_issue_hash(self, summary, description): 
-        str    = '{}:{}'.format(summary, description.strip())
+    def generate_issue_hash(self, issue): 
+        str    = '{}:{}:{}'.format(issue.summary, issue.description.strip(), issue.checklist.text.strip())
         result = hashlib.md5(str.encode())
         return result.hexdigest()
 
@@ -317,36 +328,55 @@ class MD2Jira:
         with open('.md2jira_cache.py.tsv', 'r') as fh:
             for line in fh:
                 key, summary, hash = '{}'.format(line.rstrip()).split('\t')
-                print('YYY: {}'.format(line.rstrip()))
                 if key == issue_key: 
                     result = (hash == issue_hash)
         return result
 
     def update_issue_cache(self, issue): 
-        hash   = self.generate_issue_hash(issue.summary, issue.description)
+        hash = self.generate_issue_hash(issue)
         if self.check_issue_cache_hash(issue.key, hash) is False:
             # Temp file
-            tmpfile = tempfile.NamedTemporaryFile()
+            tmpfile = tempfile.NamedTemporaryFile(delete=False)
             # Write everything _but_ changed issue out
             with open('.md2jira_cache.py.tsv', 'r') as fh:
                 for line in fh:
                     if line.startswith(issue.key) is False:
                         tmpfile.write(bytes(line,'utf-8'))
 
-            fields = [issue.key, '"{}"'.format(issue.summary), hash]
-            tmpfile.write(bytes('{}\n'.format('\t'.join(fields)), 'utf-8'))
-            os.rename(tmpfile.name, '.md2jira_cache.py.tsv')
+                fields = [issue.key, '"{}"'.format(issue.summary), hash]
+                tmpfile.write(bytes('{}\n'.format('\t'.join(fields)), 'utf-8'))
+                shutil.copyfile(tmpfile.name, '{}/{}'.format(os.getcwd(), '.md2jira_cache.py.tsv'))
 
 class Issue:
-    def __init__(self, type, key='', summary='', description=''):
-        self.key         = key 
-        self.type        = type
-        self.summary     = summary
-        self.description = description.strip()
-        self.epic_id     = None
-        self.parent_id   = None
-        self.priority    = None
-        self.assignee    = None
+    def __init__(self, type, key='', summary='', description='', checklist_text=''):
+        self.key            = key 
+        self.type           = type
+        self.summary        = summary
+        self.description    = description.strip()
+        self.checklist      = Checklist(checklist_text)
+        self.checklist_re   = re.compile(r'^\* \[(.*)\] (.*)$')
+        self.epic_id        = None
+        self.parent_id      = None
+        self.priority       = None
+        self.assignee       = None
+
+        if checklist_text is None:
+            checklist_text = ''
+
+        if checklist_text and len(checklist_text) > 0: 
+            self.checklist = self.process_checklist(checklist_text)
+
+    def process_checklist(self, str):
+        """Convert checklist str in to checklist"""
+
+        # Ignore first line, which is just name of the checklist
+        for item in str.rstrip().split('\n')[1:]:
+            matches = re.match(self.checklist_re, item.rstrip())
+            status, item_text = matches.group(1, 2)
+            checklist_item   = ChecklistItem(item_text, status)
+            self.checklist.append(checklist_item)
+
+        return self.checklist
 
 class IssueType(Enum):
     NONE      = 0
@@ -362,18 +392,33 @@ class ParserState(Enum):
     COLLECT_CHECKLIST   = 3
 
 class Checklist:
-    def __init__(self):
+    def __init__(self, str):
         self.items  = []
+        self.text   = str
+    def __repr__(self):
+        result = MD2Jira.format_checklist(self, self)
+        return result
     def append(self, item):
         self.items.append(item)
+        self.text = repr(self)
 
 class ChecklistItem:
+        
     def __init__(self, text, status):
+        self.shorthand_mapping = {
+            'x': 'DONE',
+            ' ': 'OPEN',
+            '>': 'IN_PROGRESS'
+        }
         self.text    = text
-        self.status  = status
-        self.checked = ChecklistItemStatus.__dict__[status.name.upper()] == ChecklistItemStatus.DONE
+        self.status  = ChecklistItemStatus.__dict__[self.shorthand_mapping[status].upper() if status in self.shorthand_mapping.keys() else status.replace(' ', '_').upper()]
+        try: 
+            self.checked = self.status == ChecklistItemStatus.DONE
+        except:
+            print ('yay')
 
 class ChecklistItemStatus(Enum):
+
     NONE        = 0
     OPEN        = 1
     IN_PROGRESS = 2

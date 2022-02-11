@@ -57,7 +57,9 @@ class MD2Jira:
                 IssueType.__dict__[issue.type.name.replace('-','')],
                 json_loads['key'],
                 issue.summary,
-                issue.description
+                issue.description,
+                issue.checklist.text or ''
+
             )
             if issue.type is IssueType.Story and hasattr(issue, 'epic_id'):
                 created_issue.epic_id = issue.epic_id

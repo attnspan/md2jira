@@ -13,7 +13,6 @@ parser = argparse.ArgumentParser(description=main.__doc__)
 
 parser.add_argument('-i', dest='INFILE', type=str, help='Input markdown file', required=True)
 parser.add_argument('-p',
-    default='DRT', 
     dest='JIRA_PROJECT_KEY', 
     help='"KEY" of target JIRA project',
     type=str 

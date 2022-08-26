@@ -15,18 +15,19 @@ h3. Another Section
 The following will translate into a bulleted list: 
 
 * 123
-* 456
+* 654
 * 999
+* 888
 
-### Subtask A
+### md2jira Subtask A
 
 Generate a _Sub-task_ issue by using _Markdown_'s `###` i.e. `H3` prefix
 
-### Subtask B
+### md2jira Subtask B
 
 Thanks for playing!
 
-### Subtask C
+### md2jira Subtask C
 
 What's going to happen ggg? 
 

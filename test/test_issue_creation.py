@@ -4,9 +4,13 @@ from urllib.parse import urlencode, quote
 import argparse
 from src.md2jira import MD2Jira, Issue, IssueType
 
+import os
+from dotenv import load_dotenv
+load_dotenv(override=True)
+
 pytest.args = argparse.ArgumentParser()
 pytest.args.INFILE = 'example.md'
-pytest.args.JIRA_PROJECT_KEY = 'DRT'
+pytest.args.JIRA_PROJECT_KEY = os.environ.get('JIRA_PROJECT_KEY')
 pytest.issue_epic    = Issue(IssueType.Epic, '', 'Epic Test 001', 'description has `TEST`')
 pytest.issue_story   = Issue(IssueType.Story, '', 'Story Test 001', 'description has `TEST`')
 pytest.issue_subtask = Issue(IssueType.Subtask, '', 'Subtask Test 001', 'description has `TEST`')

@@ -2,7 +2,6 @@
 .cache/
 .md2jira_cache.py.tsv
 .python-version
-.vscode/
 __pycache__
 *.pyc
 *.sh

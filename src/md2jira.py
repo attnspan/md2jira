@@ -15,10 +15,18 @@ import hashlib
 class MD2Jira:
     def __init__(self, args): 
 
-        load_dotenv()
+        # Local environment supercedes .env file
+        load_dotenv(override=True)
+
+        subdomain         = os.environ.get('JIRA_PROJECT_SUBDOMAIN')
+
+        if hasattr(args, 'JIRA_PROJECT_KEY') and args.JIRA_PROJECT_KEY is not None:
+            self.PROJECT_KEY = args.JIRA_PROJECT_KEY
+        else:
+            self.PROJECT_KEY  = os.environ.get('JIRA_PROJECT_KEY')
 
         self.args         = args
-        self.baseurl      = 'https://{}.atlassian.net/rest/api/2'.format(os.environ.get('JIRA_PROJECT_SUBDOMAIN'))
+        self.baseurl      = 'https://{}.atlassian.net/rest/api/2'.format(subdomain)
         self.http         = urllib3.PoolManager(ca_certs=certifi.where())
         self.epic_re      = re.compile(r'^#\s+')
         self.story_re     = re.compile(r'^##\s+')
@@ -26,6 +34,9 @@ class MD2Jira:
         self.checklist_re = re.compile(r'^\* \[(.*)\] (.*)$')
         self.epic_id      = ''
         self.parent_id    = ''
+
+        self.checklist_enabled      = False
+        self.checklist_custom_field = 'customfield_10262' if subdomain == 'brightsign' else 'customfield_10302' 
 
     def jira_http_call(self, url, verb='GET', body=''):
 
@@ -70,7 +81,7 @@ class MD2Jira:
 
     def read_issue(self, issue_key): 
         """Read issue directly via JIRA 'issue' API"""
-        url  = '{}/issue/{}?fields=summary,description,priority,issuetype,customfield_10262'.format(self.baseurl, issue_key)
+        url  = '{}/issue/{}?fields=summary,description,priority,issuetype,{}'.format(self.baseurl, issue_key, self.checklist_custom_field)
         resp = self.jira_http_call(url)
         json_loads = json.loads(resp.data.decode('utf-8'))
         if 'fields' in json_loads:
@@ -80,7 +91,7 @@ class MD2Jira:
                 json_loads['key'],
                 fields['summary'],
                 fields['description'],
-                fields['customfield_10262'] 
+                fields[self.checklist_custom_field] if self.checklist_enabled else ''
             )
             return issue
         return None
@@ -97,7 +108,10 @@ class MD2Jira:
                 issue.description,
                 issue.checklist.text
             )
+            print("{} updated".format(issue.key))
             return updated_issue
+        else:
+            print("{} NOT updated".format(issue.key))
         return None
 
     def delete_issue(self, issue):
@@ -109,7 +123,8 @@ class MD2Jira:
     def find_issue(self, issue): 
         """Locate issue via JIRA 'search' API"""
         summary_encoded = issue.summary.replace('!','\\\\!')
-        url         ='{}/search?jql=project={}+AND+summary~\"{}\"&fields=summary,description,priority,issuetype,customfield_10262'.format(self.baseurl, self.args.JIRA_PROJECT_KEY, summary_encoded.replace(' ', '+'))
+        summary_encoded = summary_encoded.replace('-','\\\\-')
+        url         ='{}/search?jql=project={}+AND+summary~\"{}\"&fields=summary,description,priority,issuetype,{}'.format(self.baseurl, self.PROJECT_KEY, summary_encoded.replace(' ', '+'), self.checklist_custom_field)
         resp        = self.jira_http_call(url)
         json_loads  = json.loads(resp.data.decode('utf-8'))
         found_issue = None
@@ -124,6 +139,9 @@ class MD2Jira:
 
             key    = actual_issue['key']
             fields = actual_issue['fields']
+
+            if self.checklist_custom_field not in fields:
+                fields[self.checklist_custom_field] = []
     
             found_issue =  Issue(
                 # TODO: Learn magic, cleaner way to this
@@ -131,7 +149,7 @@ class MD2Jira:
                 key,
                 fields['summary'],
                 fields['description'],
-                fields['customfield_10262'] 
+                fields[self.checklist_custom_field] 
             )
             return found_issue
         return None
@@ -192,7 +210,7 @@ class MD2Jira:
             issue_type = IssueType.Story
         elif self.subtask_re.match(str):
             issue_type = IssueType.Subtask
-        elif self.checklist_re.match(str):
+        elif self.checklist_enabled and self.checklist_re.match(str):
             issue_type = IssueType.Checklist
         
         return issue_type
@@ -213,27 +231,21 @@ class MD2Jira:
                 # TODO: Update issue cache
                 self.update_issue_cache(issue)
             else:
-                # * Check for description, etc changes
-                issue_hash   = self.generate_issue_hash(issue)
-                hashes_match = self.check_issue_cache_hash(issue.key, issue_hash)
-                if hashes_match is False:
-                    # * Update issues via JIRA API
-                    issue_data = self.prepare_issue(issue)
-                    self.update_issue(issue, issue_data)
-
-                    # * Update issue cache
-                    self.update_issue_cache(issue)
+                print ("{}: \"{}\" up to date, skipping".format(issue.key, issue.summary))
         else:
             # TODO: Create new issues
             issue_data   = self.prepare_issue(issue)
             create_issue = self.create_issue(issue, issue_data)
 
-            if create_issue is not None and create_issue.type is IssueType.Epic:
-                self.epic_id   = create_issue.key
-            if create_issue is not None and create_issue.type is IssueType.Story:
-                self.parent_id = create_issue.key
-            # * Update issue cache
-            self.update_issue_cache(create_issue)
+            if create_issue is not None:
+                if create_issue is not None and create_issue.type is IssueType.Epic:
+                    self.epic_id   = create_issue.key
+                if create_issue is not None and create_issue.type is IssueType.Story:
+                    self.parent_id = create_issue.key
+                # * Update issue cache
+                self.update_issue_cache(create_issue)
+            else:
+                print('ERROR: unable to create "{}"'.format(issue.summary))
 
     def diff_issue_against_remote(self, issue, remote_issue):
         """Determine if remote issue has changed since last local edit"""
@@ -241,10 +253,35 @@ class MD2Jira:
 
         if issue.summary != remote_issue.summary:
             result = True
-        # TODO: Figure out what to do about need to strip() descriptions
+
+        """Convert certain to JIRA Wiki format to Markdown"""
+        regex = {
+            'link': re.compile(r'^(.*)\[([^|]+)\|([^\]]+)\](.*)$')
+        }
+        replacements = {
+            'link': r'\1[\2](\3)\4'
+        }
+
+        # for format in regex:
+        #     matches = re.match(regex[format], str)
+        #     if matches is not None:
+        #         str     = re.sub(regex[format], replacements[format], str)
+        # return str
+
+        wiki2md = []
+        lines = issue.description.strip().split('\n')
+        for line in lines:
+            for format in regex:
+                matches = re.match(regex[format], line)
+                if matches is not None:
+                    line = re.sub(regex[format], replacements[format], line)
+            wiki2md.append(line.rstrip())
+        
+        remote_issue.description = str(remote_issue.description or '')
         if issue.description.strip() != remote_issue.description:
             result = True
 
+        remote_issue.checklist.text = str(remote_issue.checklist.text or '')
         if issue.checklist.text != remote_issue.checklist.text:
             result = True
 
@@ -252,10 +289,7 @@ class MD2Jira:
 
     def prepare_issue(self, issue): 
         """Prepare JSON data to send to JIRA API"""
-        if hasattr(self.args, 'JIRA_PROJECT_KEY'):
-            project_key = self.args.JIRA_PROJECT_KEY
-        else:
-            project_key = os.environ.get('JIRA_PROJECT_KEY')
+        project_key = self.PROJECT_KEY
 
         # Account for dash i.e '-' character in "Sub-task"
         issue_type = 'Sub-task' if issue.type is IssueType.Subtask else issue.type.name
@@ -267,6 +301,7 @@ class MD2Jira:
                 },
                 'summary': issue.summary,
                 'description': issue.description.strip(),
+                'components': [{"name": "App Services"}],
                 'issuetype': {
                     'name': issue_type
                 }
@@ -282,9 +317,14 @@ class MD2Jira:
                 'key': self.parent_id
             } 
         
+
         if hasattr(issue, 'checklist') and len(issue.checklist.items) > 0:
-            checklist_text = self.format_checklist(issue.checklist)
-            out_json['fields']['customfield_10262'] = checklist_text
+            if self.checklist_enabled is False:
+                for item in issue.checklist.items:
+                    out_json['fields']['description'] += '\n{}'.format(item.text)
+            else:
+                checklist_text = self.format_checklist(issue.checklist)
+                out_json['fields'][self.checklist_custom_field] = checklist_text
 
         return json.dumps(out_json)
 
@@ -302,6 +342,33 @@ class MD2Jira:
             if matches is not None:
                 str     = re.sub(regex[format], replacements[format], str)
         return str
+
+    def wiki2md(self, issue):
+        """Convert JIRA issue to Markdown"""
+        output = []
+        # Print Summmary w/ right header level based on IssueType
+        issue_type_value      = issue.type.value
+        issue_type_header_str = '#' * issue_type_value
+        output.append('{} {}\n'.format(issue_type_header_str, issue.summary).rstrip()) 
+
+        # Print description
+        output.append('{}\n'.format(issue.description))
+
+        # Print formatted checklist if exists
+        items = issue.checklist and issue.checklist.items
+        if items and len(items) > 0:
+            for item in items:
+                status = item.status.name
+                output.append('* [{}] {}'.format(item.reverse_mapping[status], item.text))
+            
+        # Overwrite original file, backing up original
+
+        result = '\n'.join(output) 
+
+        print(result)
+
+        return result
+
 
     def format_checklist(self, checklist):
         # @see https://is.gd/uhaViF
@@ -354,7 +421,7 @@ class Issue:
         self.key            = key 
         self.type           = type
         self.summary        = summary
-        self.description    = description.strip()
+        self.description    = description and description.strip()
         self.checklist      = Checklist(checklist_text)
         self.checklist_re   = re.compile(r'^\* \[(.*)\] (.*)$')
         self.epic_id        = None
@@ -407,11 +474,20 @@ class Checklist:
 class ChecklistItem:
         
     def __init__(self, text, status):
+
+        if status == '' or len(status) == 0:
+            status = ' '
+
         self.shorthand_mapping = {
             'x': 'DONE',
             ' ': 'OPEN',
             '>': 'IN_PROGRESS'
         }
+
+        self.reverse_mapping = {}
+        for v in self.shorthand_mapping:
+            self.reverse_mapping[self.shorthand_mapping[v]] = v
+
         self.text    = text
         self.status  = ChecklistItemStatus.__dict__[self.shorthand_mapping[status].upper() if status in self.shorthand_mapping.keys() else status.replace(' ', '_').upper()]
         try: 

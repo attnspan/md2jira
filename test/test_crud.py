@@ -4,11 +4,16 @@ from urllib.parse import urlencode, quote
 import argparse
 from src.md2jira import MD2Jira, Issue, IssueType
 
+import os
+from dotenv import load_dotenv
+load_dotenv(override=True)
+
 pytest.args = argparse.ArgumentParser()
 pytest.args.INFILE = 'example.md'
-pytest.args.JIRA_PROJECT_KEY = 'DRT'
+pytest.args.JIRA_PROJECT_KEY = os.environ.get('JIRA_PROJECT_KEY')
 pytest.issue = Issue(IssueType.Epic, '', 'holy, bagumba!', 'description has `TEST`')
 pytest.updated_description = 'updated description with `another formatting challenge`'
+
 
 class TestMD2JIRA:
     def test_create(self):

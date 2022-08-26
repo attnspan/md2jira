@@ -36,7 +36,7 @@ class MD2Jira:
         self.parent_id    = ''
 
         self.checklist_enabled      = False
-        self.checklist_custom_field = 'customfield_10262' if subdomain == 'brightsign' else 'customfield_10302' 
+        self.checklist_custom_field = 'customfield_10262' if subdomain == os.environ.get('JIRA_PROJECT_SUBDOMAIN') else 'customfield_10302' 
 
     def jira_http_call(self, url, verb='GET', body=''):
 

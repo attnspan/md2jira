@@ -19,14 +19,18 @@ class MD2Jira:
         load_dotenv(override=True)
 
         subdomain         = os.environ.get('JIRA_PROJECT_SUBDOMAIN')
+        domain            = os.environ.get('JIRA_DOMAIN')
+        domain            = domain if domain is not None else 'atlassian.net'
+        checklist_field   = os.environ.get('JIRA_CHECKLIST_CUSTOMFIELD')
 
         if hasattr(args, 'JIRA_PROJECT_KEY') and args.JIRA_PROJECT_KEY is not None:
             self.PROJECT_KEY = args.JIRA_PROJECT_KEY
         else:
             self.PROJECT_KEY  = os.environ.get('JIRA_PROJECT_KEY')
 
+
         self.args         = args
-        self.baseurl      = 'https://{}.atlassian.net/rest/api/2'.format(subdomain)
+        self.baseurl      = f'https://{subdomain}.{domain}/rest/api/2'
         self.http         = urllib3.PoolManager(ca_certs=certifi.where())
         self.epic_re      = re.compile(r'^#\s+')
         self.story_re     = re.compile(r'^##\s+')
@@ -35,8 +39,8 @@ class MD2Jira:
         self.epic_id      = ''
         self.parent_id    = ''
 
-        self.checklist_enabled      = False
-        self.checklist_custom_field = 'customfield_10262' if subdomain == os.environ.get('JIRA_PROJECT_SUBDOMAIN') else 'customfield_10302' 
+        self.checklist_custom_field = os.environ.get('JIRA_CHECKLIST_CUSTOMFIELD')
+        self.checklist_enabled      = self.checklist_custom_field is not None
 
     def jira_http_call(self, url, verb='GET', body=''):
 
@@ -63,7 +67,15 @@ class MD2Jira:
         url  = '{}/issue'.format(self.baseurl)
         resp = self.jira_http_call(url, 'POST', issue_json)
         json_loads = json.loads(resp.data.decode('utf-8'))
-        if 'key' in json_loads:
+        errorMessages = json_loads['errorMessages'] if 'errorMessages' in json_loads else None
+        errors = json_loads['errors'] if 'errors' in json_loads else None
+        if errorMessages and len(errorMessages) > 0:
+            print ('The following errors occurred:')
+            print (f'{json_loads["errorMessages"][0]}')
+        elif errors and len(errors) > 0:
+            print ('The following errors occurred:')
+            print (f'{json_loads["errors"]}')
+        elif 'key' in json_loads:
             created_issue = Issue(
                 IssueType.__dict__[issue.type.name.replace('-','')],
                 json_loads['key'],
@@ -76,6 +88,10 @@ class MD2Jira:
                 created_issue.epic_id = issue.epic_id
             if issue.type is IssueType.Subtask and hasattr(issue, 'parent_id'):
                 created_issue.parent_id = issue.parent_id
+            issue_key = json_loads['key']
+            print (
+                f'Created issue {issue_key}: https://wbinsights.atlassian.net/browse/{issue_key}'
+            )
             return created_issue
         return None
 
@@ -145,7 +161,7 @@ class MD2Jira:
     
             found_issue =  Issue(
                 # TODO: Learn magic, cleaner way to this
-                IssueType.__dict__[fields['issuetype']['name'].replace('-','')],
+                IssueType.__dict__[fields['issuetype']['name'].replace('-','').replace(' ', '')],
                 key,
                 fields['summary'],
                 fields['description'],
@@ -201,21 +217,21 @@ class MD2Jira:
         self.process_issue(issues[-1])
         fh.close()
 
-    def detect_issue(self, str):
+    def detect_issue(self, _str):
         issue_type = IssueType.NONE
 
-        if self.epic_re.match(str):
+        if self.epic_re.match(_str):
             issue_type = IssueType.Epic
-        elif self.story_re.match(str):
+        elif self.story_re.match(_str):
             issue_type = IssueType.Story
-        elif self.subtask_re.match(str):
+        elif self.subtask_re.match(_str):
             issue_type = IssueType.Subtask
-        elif self.checklist_enabled and self.checklist_re.match(str):
+        elif self.checklist_enabled and self.checklist_re.match(_str):
             issue_type = IssueType.Checklist
-        
+
         return issue_type
 
-    def process_issue(self, issue): 
+    def process_issue(self, issue):
         remote_issue = self.find_issue(issue)
         if remote_issue != None:
             if remote_issue.type is IssueType.Epic:
@@ -287,12 +303,12 @@ class MD2Jira:
 
         return result
 
-    def prepare_issue(self, issue): 
+    def prepare_issue(self, issue):
         """Prepare JSON data to send to JIRA API"""
         project_key = self.PROJECT_KEY
 
         # Account for dash i.e '-' character in "Sub-task"
-        issue_type = 'Sub-task' if issue.type is IssueType.Subtask else issue.type.name
+        issue_type = 'Sub-Task' if issue.type is IssueType.Subtask else issue.type.name
 
         out_json    = {
             'fields': {
@@ -301,7 +317,7 @@ class MD2Jira:
                 },
                 'summary': issue.summary,
                 'description': issue.description.strip(),
-                'components': [{"name": "App Services"}],
+                #'components': [{"name": "App Services"}],
                 'issuetype': {
                     'name': issue_type
                 }
@@ -310,13 +326,23 @@ class MD2Jira:
 
         if issue.type is IssueType.Epic:
             out_json['fields']['customfield_10011'] = issue.summary
+            #10307 for Epics?
+            #out_json['fields']['customfield_10307'] = issue.summary
+            # Epic Type == 'Platform'?
+            # out_json['fields']['customfield_10037'] = {
+            #     'value': 'Platform'
+            # }
         if issue.type is IssueType.Story and len(self.epic_id) > 0:
             out_json['fields']['customfield_10014'] = self.epic_id
         if issue.type is IssueType.Subtask and len(self.parent_id) > 0:
-            out_json['fields']['parent'] = { 
+            out_json['fields']['parent'] = {
                 'key': self.parent_id
-            } 
-        
+            }
+    
+        # Add 'WBA Team' == 'Security'
+        out_json['fields']['customfield_10032'] = {
+            'value': 'Security'
+        }
 
         if hasattr(issue, 'checklist') and len(issue.checklist.items) > 0:
             if self.checklist_enabled is False:
@@ -337,10 +363,11 @@ class MD2Jira:
             'link': r'\1[\2|\3]\4'
         }
 
-        for format in regex:
-            matches = re.match(regex[format], str)
+        for item in regex:
+            matches = re.match(regex[item], str)
             if matches is not None:
-                str     = re.sub(regex[format], replacements[format], str)
+                str     = re.sub(regex[item], replacements[item], str)
+
         return str
 
     def wiki2md(self, issue):
@@ -349,7 +376,7 @@ class MD2Jira:
         # Print Summmary w/ right header level based on IssueType
         issue_type_value      = issue.type.value
         issue_type_header_str = '#' * issue_type_value
-        output.append('{} {}\n'.format(issue_type_header_str, issue.summary).rstrip()) 
+        output.append('{} {}\n'.format(issue_type_header_str, issue.summary).rstrip())
 
         # Print description
         output.append('{}\n'.format(issue.description))
@@ -394,7 +421,11 @@ class MD2Jira:
 
     def check_issue_cache_hash(self, issue_key, issue_hash):
         result = False
-        with open('.md2jira_cache.py.tsv', 'r') as fh:
+        cache_file = '.md2jira_cache.py.tsv'
+        if os.path.exists(cache_file) is False:
+            open(cache_file, 'a', encoding='utf-8').close()
+
+        with open(cache_file, 'r', encoding='utf-8') as fh:
             for line in fh:
                 key, summary, hash = '{}'.format(line.rstrip()).split('\t')
                 if key == issue_key: 
@@ -423,7 +454,7 @@ class Issue:
         self.summary        = summary
         self.description    = description and description.strip()
         self.checklist      = Checklist(checklist_text)
-        self.checklist_re   = re.compile(r'^\* \[(.*)\] (.*)$')
+        self.checklist_re   = re.compile(r'^.*\* \[(.*)\] (.*)$')
         self.epic_id        = None
         self.parent_id      = None
         self.priority       = None
@@ -451,11 +482,14 @@ class IssueType(Enum):
     NONE      = 0
     Epic      = 1
     Story     = 2
-    Subtask   = 3
-    Checklist = 4
+    Task      = 3
+    Subtask   = 4
+    Checklist = 5
+    WBAAccessRequest = 6
+    Defect = 7
 
 class ParserState(Enum):
-    NONE                = 0 
+    NONE                = 0
     DETECT_ISSUE        = 1
     COLLECT_DESCRIPTION = 2
     COLLECT_CHECKLIST   = 3

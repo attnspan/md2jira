@@ -1,8 +1,8 @@
-# Such Epic, Wow!
+# Test -- md2jira Epic creation
 
 Generate an _Epic_ issue by using _Markdown_'s `#` i.e. `H1` prefix
 
-## Our First Story
+## Test -- md2jira Story creation
 
 Generate a _Story_ issue by using _Markdown_'s `##` i.e. `H2` prefix
 
@@ -19,17 +19,17 @@ The following will translate into a bulleted list:
 * 999
 * 888
 
-### md2jira Subtask A
+### Test -- md2jira Subtask A
 
 Generate a _Sub-task_ issue by using _Markdown_'s `###` i.e. `H3` prefix
 
-### md2jira Subtask B
+### Test -- md2jira Subtask B
 
 Thanks for playing!
 
-### md2jira Subtask C
+### Test -- md2jira Subtask C
 
-What's going to happen ggg? 
+What's going to happen? 
 
 TODO: Trigger changes if/when only checklist is updated, i.e. include checklist in issue hash calculation
 

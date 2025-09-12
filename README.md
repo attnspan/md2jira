@@ -1,4 +1,4 @@
-# MD2Jira -- Stay Organized in JIRA ... without ... using ... JIRA?
+# MD2Jira -- Interact with the Jira API from the command line.
 
 `MD2Jira` is an application designed to allow individuals to create and update JIRA tickets by simply feeding specifically formatted `Markdown` files to the app. 
 

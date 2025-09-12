@@ -4,8 +4,16 @@
 
 ## Features
 
-* Create JIRA _Epic_, _Story_ and _Sub-task_ issues in JIRA
+* Create JIRA _Epic_, _Task_ and _Sub-task_ issues in JIRA
 * Edit the _description_ fields of created issues
+* Support for modern Jira API v3 with Atlassian Document Format (ADF)
+* Robust error handling and retry logic
+
+## Requirements
+
+* **Python 3.11+** (required for modern dependencies)
+* **Jira Cloud or Server** with API v3 support
+* **Valid Jira API Token** with appropriate permissions
 
 ## Setup
 
@@ -42,23 +50,64 @@ JIRA_PROJECT_SUBDOMAIN=<YOUR_JIRA_PROJECT_SUBDOMAIN>
 echo "JIRA_PROJECT_KEY = \"${JIRA_PROJECT_KEY}\"" >> .env
 echo "JIRA_PROJECT_SUBDOMAIN = \"${JIRA_PROJECT_SUBDOMAIN}\"" >> .env
 ```
-### Usage
+### Installation & Usage
 
-```
+```bash
+# Ensure Python 3.11+
+python --version
+
+# Install dependencies
 python -m pip install -r requirements.txt
+
+# Run with your markdown file
 python main.py -i example.md
 ```
 
 ### Run Tests
 
-```
+```bash
+# Install dependencies (if not already done)
 python -m pip install -r requirements.txt
-python -m pytest test
+
+# Run full test suite
+python -m pytest test/ -v
+
+# Expected: 14/14 tests passing
 ```
+
+## Upgrading from v1.x
+
+If upgrading from a previous version:
+
+1. **Update Python**: Ensure you have Python 3.11 or later
+2. **Update Dependencies**: Run `pip install -r requirements.txt`
+3. **Test Connection**: Verify your Jira instance works with the new API
+4. **Issue Types**: Note that Story types now create Task issues
+
+See [CHANGELOG.md](CHANGELOG.md) for detailed migration information.
 
 ## Example Markdown Format
 
 Please see the [example.md](example.md) file for examples of different formatting options.
+
+## Troubleshooting
+
+### Common Issues
+
+**"410 Gone" errors**: This indicates you're using an outdated version. Update to v2.0+ which uses Jira API v3.
+
+**Python version errors**: Ensure you're using Python 3.11+. Use `pyenv` or `conda` to manage versions.
+
+**Test failures**: If tests fail intermittently, it may be due to Jira indexing delays. The test suite includes automatic retries.
+
+**ADF format issues**: Modern Jira returns descriptions in Atlassian Document Format. This version handles both ADF and plain text.
+
+### Getting Help
+
+1. Check the [CHANGELOG.md](CHANGELOG.md) for recent changes
+2. Review the test suite for usage examples
+3. Ensure your `.env` file is properly configured
+4. Verify your Jira API token has the necessary permissions
 
 ## Wishlist
 

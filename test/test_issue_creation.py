@@ -12,7 +12,7 @@ pytest.args = argparse.ArgumentParser()
 pytest.args.INFILE = 'example.md'
 pytest.args.JIRA_PROJECT_KEY = os.environ.get('JIRA_PROJECT_KEY')
 pytest.issue_epic    = Issue(IssueType.Epic, '', 'Epic Test 001', 'description has `TEST`')
-pytest.issue_story   = Issue(IssueType.Story, '', 'Story Test 001', 'description has `TEST`')
+pytest.issue_task    = Issue(IssueType.Task, '', 'Task Test 001', 'description has `TEST`')
 pytest.issue_subtask = Issue(IssueType.Subtask, '', 'Subtask Test 001', 'description has `TEST`')
 
 class TestMD2JIRA:
@@ -29,9 +29,9 @@ class TestMD2JIRA:
         assert result.type == IssueType.Epic
         assert result.key != ''
 
-    def test_create_story(self):
+    def test_create_task(self):
         md2jira    = MD2Jira(pytest.args)
-        issue      = pytest.issue_story
+        issue      = pytest.issue_task
 
         md2jira.epic_id = pytest.epic_issue_key
         issue.epic_id   = pytest.epic_issue_key
@@ -39,13 +39,13 @@ class TestMD2JIRA:
         issue_data = md2jira.prepare_issue(issue)
         result     = md2jira.create_issue(issue, issue_data)
         if result.key != '':
-            pytest.story_issue     = result
-            pytest.story_issue_key = result.key
+            pytest.task_issue     = result
+            pytest.task_issue_key = result.key
             md2jira.parent_id      = result.key
             issue.parent_id        = result.key
         assert result != None
         assert type(result) == Issue
-        assert result.type == IssueType.Story
+        assert result.type == IssueType.Task
         assert result.key != ''
         assert hasattr(result, 'epic_id')
         assert result.epic_id == issue.epic_id
@@ -54,8 +54,8 @@ class TestMD2JIRA:
         md2jira    = MD2Jira(pytest.args)
         issue      = pytest.issue_subtask
 
-        md2jira.parent_id = pytest.story_issue_key
-        issue.parent_id   = pytest.story_issue_key
+        md2jira.parent_id = pytest.task_issue_key
+        issue.parent_id   = pytest.task_issue_key
 
         issue_data = md2jira.prepare_issue(issue)
         result     = md2jira.create_issue(issue, issue_data)
@@ -77,9 +77,9 @@ class TestMD2JIRA:
         assert result.reason == 'No Content'
         assert result.status == 204
 
-    def test_delete_story(self):
+    def test_delete_task(self):
         md2jira    = MD2Jira(pytest.args)
-        issue      = Issue(IssueType.Story, pytest.story_issue_key)
+        issue      = Issue(IssueType.Task, pytest.task_issue_key)
         result     = md2jira.delete_issue(issue)
         assert type(result) == urllib3.response.HTTPResponse
         assert result.reason == 'No Content'

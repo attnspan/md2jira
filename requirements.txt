@@ -1,5 +1,4 @@
-certifi==2020.12.5
-certifi==2023.11.17
-pytest==6.2.5
-python-dotenv==1.0.0
-urllib3==1.26.4
+certifi>=2023.11.17
+pytest>=7.4.0
+python-dotenv>=1.0.0
+urllib3>=2.0.0

@@ -34,6 +34,7 @@ class MD2Jira:
         self.http         = urllib3.PoolManager(ca_certs=certifi.where())
         self.epic_re      = re.compile(r'^#\s+')
         self.story_re     = re.compile(r'^##\s+')
+        self.task_re      = re.compile(r'^##\s+')
         self.subtask_re   = re.compile(r'^###\s+')
         self.checklist_re = re.compile(r'^\* \[(.*)\] (.*)$')
         self.epic_id      = ''
@@ -84,7 +85,7 @@ class MD2Jira:
                 issue.checklist.text or ''
 
             )
-            if issue.type is IssueType.Story and hasattr(issue, 'epic_id'):
+            if issue.type is IssueType.Task and hasattr(issue, 'epic_id'):
                 created_issue.epic_id = issue.epic_id
             if issue.type is IssueType.Subtask and hasattr(issue, 'parent_id'):
                 created_issue.parent_id = issue.parent_id
@@ -140,38 +141,72 @@ class MD2Jira:
         """Locate issue via JIRA 'search' API"""
         summary_encoded = issue.summary.replace('!','\\\\!')
         summary_encoded = summary_encoded.replace('-','\\\\-')
-        url         ='{}/search?jql=project={}+AND+summary~\"{}\"&fields=summary,description,priority,issuetype,{}'.format(self.baseurl, self.PROJECT_KEY, summary_encoded.replace(' ', '+'), self.checklist_custom_field)
+        
+        # Build the fields list - only include checklist field if it's configured
+        fields = 'summary,description,priority,issuetype'
+        if self.checklist_custom_field:
+            fields += f',{self.checklist_custom_field}'
+            
+        # Use API v3 search/jql endpoint (v2 has been deprecated)
+        api_v3_base = self.baseurl.replace('/rest/api/2', '/rest/api/3')
+        url = f'{api_v3_base}/search/jql?jql=project={self.PROJECT_KEY}+AND+summary~"{summary_encoded.replace(" ", "+")}"&fields={fields}'
+        
         resp        = self.jira_http_call(url)
         json_loads  = json.loads(resp.data.decode('utf-8'))
         found_issue = None
 
-        if 'issues' in json_loads and len(json_loads['issues']) > 0: 
-            found_issues = json_loads['issues']
-            if len(found_issues) > 1:
-                # Account for JQL `~` operator returning similar results
-                actual_issue = [i for i in found_issues if i['fields']['summary'] == issue.summary][-1]
-            else: 
-                actual_issue = found_issues[-1]
+        if 'issues' in json_loads and len(json_loads['issues']) > 0:
+            found_issues      = json_loads['issues']
+            actual_issue_list = [i for i in found_issues if i['fields']['summary'] == issue.summary]
+            if len(actual_issue_list) == 0:
+                return None
 
+            actual_issue      = actual_issue_list[0]
             key    = actual_issue['key']
             fields = actual_issue['fields']
 
-            if self.checklist_custom_field not in fields:
-                fields[self.checklist_custom_field] = []
+            # Handle checklist field safely
+            checklist_data = ""
+            if self.checklist_custom_field and self.checklist_custom_field in fields:
+                checklist_data = fields[self.checklist_custom_field]
     
+            # More robust issue type mapping
+            issue_type_name = fields['issuetype']['name']
+            issue_type_clean = issue_type_name.replace('-','').replace(' ', '')
+            
+            # Try to find the matching IssueType
+            try:
+                issue_type = IssueType.__dict__[issue_type_clean]
+            except KeyError:
+                # Fallback for common mappings
+                type_mapping = {
+                    'SubTask': IssueType.Subtask,
+                    'Task': IssueType.Task,
+                    'Epic': IssueType.Epic,
+                    'Story': IssueType.Story
+                }
+                issue_type = type_mapping.get(issue_type_clean, IssueType.Task)
+            
+            # Handle description field - it might be a dict with content
+            description = fields.get('description', '')
+            if isinstance(description, dict):
+                # Simple extraction for now - just convert dict to string
+                description = str(description)
+            elif description is None:
+                description = ''
+                
             found_issue =  Issue(
-                # TODO: Learn magic, cleaner way to this
-                IssueType.__dict__[fields['issuetype']['name'].replace('-','').replace(' ', '')],
+                issue_type,
                 key,
                 fields['summary'],
-                fields['description'],
-                fields[self.checklist_custom_field] 
+                description,
+                checklist_data 
             )
             return found_issue
         return None
 
     def parse_markdown(self):
-        fh           = open(self.args.INFILE, 'r')
+        fh           = open(self.args.INFILE, 'r', encoding='utf-8')
         lines        = fh.readlines()
         issues       = []
         issue_type   = IssueType.NONE
@@ -185,14 +220,14 @@ class MD2Jira:
             if issue_type is IssueType.Epic:
                 summary = '{}'.format(re.sub(self.epic_re, '', stripped))
                 stripped = 'EPIC FOUND: {}'.format(re.sub(self.epic_re, '', stripped))
-            elif issue_type is IssueType.Story:
-                summary = '{}'.format(re.sub(self.story_re, '', stripped))
-                stripped = 'STORY FOUND: {}'.format(re.sub(self.story_re, '', stripped))
+            elif issue_type is IssueType.Task:
+                summary = '{}'.format(re.sub(self.task_re, '', stripped))
+                stripped = 'STORY FOUND: {}'.format(re.sub(self.task_re, '', stripped))
             elif issue_type is IssueType.Subtask:
                 summary = '{}'.format(re.sub(self.subtask_re, '', stripped))
                 stripped = 'Subtask FOUND: {}'.format(re.sub(self.subtask_re, '', stripped))
 
-            if parser_state is ParserState.DETECT_ISSUE and issue_type in [IssueType.Epic, IssueType.Story, IssueType.Subtask]:
+            if parser_state is ParserState.DETECT_ISSUE and issue_type in [IssueType.Epic, IssueType.Task, IssueType.Subtask]:
                 issues.append(Issue(issue_type, '', summary))
                 parser_state = ParserState.COLLECT_DESCRIPTION
 
@@ -222,8 +257,8 @@ class MD2Jira:
 
         if self.epic_re.match(_str):
             issue_type = IssueType.Epic
-        elif self.story_re.match(_str):
-            issue_type = IssueType.Story
+        elif self.task_re.match(_str):
+            issue_type = IssueType.Task
         elif self.subtask_re.match(_str):
             issue_type = IssueType.Subtask
         elif self.checklist_enabled and self.checklist_re.match(_str):
@@ -236,7 +271,7 @@ class MD2Jira:
         if remote_issue != None:
             if remote_issue.type is IssueType.Epic:
                 self.epic_id = remote_issue.key
-            if remote_issue.type is IssueType.Story:
+            if remote_issue.type is IssueType.Task:
                 self.parent_id = remote_issue.key
             issue.key = remote_issue.key
 
@@ -256,7 +291,7 @@ class MD2Jira:
             if create_issue is not None:
                 if create_issue is not None and create_issue.type is IssueType.Epic:
                     self.epic_id   = create_issue.key
-                if create_issue is not None and create_issue.type is IssueType.Story:
+                if create_issue is not None and create_issue.type is IssueType.Task:
                     self.parent_id = create_issue.key
                 # * Update issue cache
                 self.update_issue_cache(create_issue)
@@ -332,7 +367,7 @@ class MD2Jira:
             # out_json['fields']['customfield_10037'] = {
             #     'value': 'Platform'
             # }
-        if issue.type is IssueType.Story and len(self.epic_id) > 0:
+        if issue.type is IssueType.Task and len(self.epic_id) > 0:
             out_json['fields']['customfield_10014'] = self.epic_id
         if issue.type is IssueType.Subtask and len(self.parent_id) > 0:
             out_json['fields']['parent'] = {
@@ -354,21 +389,23 @@ class MD2Jira:
 
         return json.dumps(out_json)
 
-    def md2wiki(self, str):
+    def md2wiki(self, _str):
         """Convert certain markdown to JIRA Wiki format"""
-        regex = {
-            'link': re.compile(r'^(.*)\[([^\]]+)\]\(([^\)]+)\)(.*)$')
-        }
-        replacements = {
-            'link': r'\1[\2|\3]\4'
+        text_replacements = {
+            'link': {
+                'match': re.compile(r'^(.*)\[([^\]]+)\]\(([^\)]+)\)(.*)$'),
+                'pattern': re.compile(r'\[([^\]]+)\]\(([^)]+)\)'),
+                'replacement': r'[\1|\2]'
+            }
         }
 
-        for item in regex:
-            matches = re.match(regex[item], str)
+        for _token_type, _replacement_info in text_replacements.items():
+            _match, _pattern, _replacement = _replacement_info.values()
+            matches = re.match(_match, _str)
             if matches is not None:
-                str     = re.sub(regex[item], replacements[item], str)
+                _str = _pattern.sub(_replacement, _str)
 
-        return str
+        return _str
 
     def wiki2md(self, issue):
         """Convert JIRA issue to Markdown"""
@@ -484,9 +521,10 @@ class IssueType(Enum):
     Story     = 2
     Task      = 3
     Subtask   = 4
-    Checklist = 5
-    WBAAccessRequest = 6
-    Defect = 7
+    SubTask   = 5
+    Checklist = 6
+    WBAAccessRequest = 7
+    Defect = 8
 
 class ParserState(Enum):
     NONE                = 0

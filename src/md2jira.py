@@ -98,7 +98,10 @@ class MD2Jira:
 
     def read_issue(self, issue_key): 
         """Read issue directly via JIRA 'issue' API"""
-        url  = '{}/issue/{}?fields=summary,description,priority,issuetype,{}'.format(self.baseurl, issue_key, self.checklist_custom_field)
+        fields = 'summary,description,priority,issuetype'
+        if self.checklist_custom_field:
+            fields += f',{self.checklist_custom_field}'
+        url  = '{}/issue/{}?fields={}'.format(self.baseurl, issue_key, fields)
         resp = self.jira_http_call(url)
         json_loads = json.loads(resp.data.decode('utf-8'))
         if 'fields' in json_loads:

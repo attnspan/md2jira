@@ -52,6 +52,8 @@ echo "JIRA_PROJECT_SUBDOMAIN = \"${JIRA_PROJECT_SUBDOMAIN}\"" >> .env
 ```
 ### Installation & Usage
 
+#### Quick Start (Traditional)
+
 ```bash
 # Ensure Python 3.11+
 python --version
@@ -62,6 +64,35 @@ python -m pip install -r requirements.txt
 # Run with your markdown file
 python main.py -i example.md
 ```
+
+#### Modern Setup (UV - Recommended for Development)
+
+**Prerequisites:** [UV installed](https://docs.astral.sh/uv/) (see `~/.rc.d/README.md` for setup)
+
+```bash
+# One-time setup
+cd ~/workspace/md2jira
+
+# Create virtual environment (super fast!)
+uv venv
+
+# Activate virtual environment
+source .venv/bin/activate
+
+# Install as CLI tool (editable mode)
+uv pip install -e .
+
+# Now run from anywhere
+md2jira -i example.md
+```
+
+**Why UV?**
+- 10-100x faster than pip
+- Automatic dependency resolution
+- Creates isolated virtual environments
+- Editable install means code changes reflect immediately
+
+See the [Development](#development) section below for more details.
 
 ### Run Tests
 
@@ -108,6 +139,98 @@ Please see the [example.md](example.md) file for examples of different formattin
 2. Review the test suite for usage examples
 3. Ensure your `.env` file is properly configured
 4. Verify your Jira API token has the necessary permissions
+
+## Development
+
+### Project Structure
+
+```
+md2jira/
+├── main.py              # CLI entry point
+├── src/
+│   └── md2jira.py      # Core functionality
+├── test/               # Test suite (pytest)
+├── pyproject.toml      # Modern Python packaging
+├── requirements.txt    # Dependencies
+└── .env                # Jira credentials (not in git)
+```
+
+### Development Setup with UV
+
+This project uses modern Python packaging with `pyproject.toml` and UV for fast dependency management.
+
+#### Initial Setup
+
+```bash
+# Install UV (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Clone and setup
+cd ~/workspace/md2jira
+
+# Create virtual environment
+uv venv
+
+# Activate it
+source .venv/bin/activate
+
+# Install in editable mode with dev dependencies
+uv pip install -e ".[dev]"
+```
+
+#### Wrapper Script
+
+A wrapper script at `~/bin/md2jira` allows running from anywhere without activating the venv:
+
+```bash
+#!/bin/bash
+source ~/workspace/md2jira/.venv/bin/activate
+md2jira "$@"
+```
+
+Make it executable:
+```bash
+chmod +x ~/bin/md2jira
+```
+
+Now you can run `md2jira -i file.md` from anywhere!
+
+#### Making Changes
+
+Since the package is installed in editable mode (`-e`), changes to the source code take effect immediately:
+
+```bash
+# Edit code
+vim src/md2jira.py
+
+# Test immediately (no reinstall needed)
+md2jira -i test-file.md
+
+# Run tests
+pytest test/ -v
+```
+
+#### Adding Dependencies
+
+```bash
+# Using UV (fast)
+uv pip install new-package
+uv pip freeze > requirements.txt
+
+# Update pyproject.toml manually
+vim pyproject.toml
+```
+
+### About UV vs PyEnv
+
+This project uses **UV** instead of traditional `pyenv` + `venv` + `pip` for:
+- **Speed:** 10-100x faster package installation
+- **Simplicity:** One tool instead of three
+- **Modern:** Following Python community standards
+
+See `~/.rc.d/README.md` for complete UV documentation and migration guide.
+
+---
 
 ## Wishlist
 

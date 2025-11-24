@@ -67,7 +67,12 @@ python main.py -i example.md
 
 #### Modern Setup (UV - Recommended for Development)
 
-**Prerequisites:** [UV installed](https://docs.astral.sh/uv/) (see `~/.rc.d/README.md` for setup)
+**Prerequisites:** [UV installed](https://docs.astral.sh/uv/)
+
+```bash
+# Install UV (one-time)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
 ```bash
 # One-time setup
@@ -221,14 +226,23 @@ uv pip freeze > requirements.txt
 vim pyproject.toml
 ```
 
-### About UV vs PyEnv
+### Why UV?
 
-This project uses **UV** instead of traditional `pyenv` + `venv` + `pip` for:
-- **Speed:** 10-100x faster package installation
-- **Simplicity:** One tool instead of three
-- **Modern:** Following Python community standards
+This project recommends **[UV](https://github.com/astral-sh/uv)** (by the Astral team, creators of Ruff) instead of traditional `pyenv` + `venv` + `pip`:
 
-See `~/.rc.d/README.md` for complete UV documentation and migration guide.
+**Benefits:**
+- **10-100x faster** than pip for package installation
+- **Single tool** replaces pyenv, venv, and pip
+- **Better dependency resolution** with automatic conflict detection
+- **Modern Python standard** - increasingly adopted by the community
+- **Written in Rust** for maximum performance
+
+**Resources:**
+- [Official UV Documentation](https://docs.astral.sh/uv/)
+- [UV GitHub Repository](https://github.com/astral-sh/uv)
+- [UV Announcement Blog Post](https://astral.sh/blog/uv)
+
+**Traditional tools still work!** If you prefer pip/venv, the traditional installation method above works perfectly fine.
 
 ---
 

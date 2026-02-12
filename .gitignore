@@ -2,6 +2,9 @@
 .cache/
 .md2jira_cache.py.tsv
 .python-version
+.vscode/
+PULL_REQUEST_TEMPLATE.md
 __pycache__
 *.pyc
 *.sh
+*.egg-info/

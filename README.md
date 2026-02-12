@@ -1,66 +1,97 @@
-# MD2Jira -- Stay Organized in JIRA ... without ... using ... JIRA?
+# MD2Jira
 
-`MD2Jira` is an application designed to allow individuals to create and update JIRA tickets by simply feeding specifically formatted `Markdown` files to the app. 
+Create and update Jira Epics, Tasks, and Sub-tasks from Markdown files.
 
-## Features
+## Prerequisites
 
-* Create JIRA _Epic_, _Story_ and _Sub-task_ issues in JIRA
-* Edit the _description_ fields of created issues
+* Python 3.9+
+* A Jira Cloud instance with API access
+* [UV](https://docs.astral.sh/uv/getting-started/installation/) package manager
 
 ## Setup
 
-### Authentication via JIRA API Key
+### 1. Install UV
 
-#### Create JIRA API Token
-
-* Navigate to JIRA [API Tokens](https://id.atlassian.com/manage-profile/security/api-tokens) page
-* Create and save your API Token in the password management tool of choice
-
-#### Generate Authentication Token 
-
-Run the following command(s) to generate the _base64_-encoded string you'll need for API calls
-
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
+
+### 2. Install dependencies
+
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install -e ".[dev]"
+```
+
+### 3. Create a Jira API token
+
+Generate a token at the Atlassian [API Tokens](https://id.atlassian.com/manage-profile/security/api-tokens) page.
+
+Then create a `.env` file in the project root:
+
+```bash
 JIRA_EMAIL=<your_email_address>
-API_TOKEN=<your_API_Token>
+API_TOKEN=<your_API_token>
 JIRA_AUTH_KEY=$(echo -n ${JIRA_EMAIL}:${API_TOKEN} | base64 | tr -d '\n')
-```
 
-### _.env_ File Setup
-
-`MD2Jira` stores your JIRA authentication key in a file called _.env_. Run the following command to put the `JIRA_AUTH_KEY` value you generated (above) into your _.env_ file: 
-
-```
 echo "JIRA_AUTH_KEY = \"${JIRA_AUTH_KEY}\"" > .env
+echo "JIRA_PROJECT_KEY = \"<YOUR_PROJECT_KEY>\"" >> .env
+echo "JIRA_PROJECT_SUBDOMAIN = \"<YOUR_SUBDOMAIN>\"" >> .env
 ```
 
-You'll also want to add your default JIRA "Project KEY" and subdomain to the _.env_ file. This is the prefix at the beginning of each JIRA issue, e.g. `MYP` for _MY Project_
+`JIRA_PROJECT_KEY` is the prefix on your Jira issues (e.g. `MYP` for *MY Project*). `JIRA_PROJECT_SUBDOMAIN` is the `<subdomain>` portion of `https://<subdomain>.atlassian.net`.
 
-```
-JIRA_PROJECT_KEY=<YOUR_JIRA_PROJECT_KEY>
-JIRA_PROJECT_SUBDOMAIN=<YOUR_JIRA_PROJECT_SUBDOMAIN>
-echo "JIRA_PROJECT_KEY = \"${JIRA_PROJECT_KEY}\"" >> .env
-echo "JIRA_PROJECT_SUBDOMAIN = \"${JIRA_PROJECT_SUBDOMAIN}\"" >> .env
-```
-### Usage
+### 4. Verify your setup
 
+Run the CRUD test suite — it creates a temporary Epic in your Jira project, verifies read/update/find, then deletes it:
+
+```bash
+pytest test/test_crud.py -v
 ```
-python -m pip install -r requirements.txt
+
+## Usage
+
+```bash
+# With the virtual environment active:
+md2jira -i example.md
+
+# Or without activating:
 python main.py -i example.md
 ```
 
-### Run Tests
+The `-p` flag overrides the project key from `.env`:
 
+```bash
+md2jira -i example.md -p OTHER_PROJECT
 ```
-python -m pip install -r requirements.txt
-python -m pytest test
+
+## Markdown Format
+
+Header levels map to Jira issue types:
+
+| Markdown | Jira Issue |
+|----------|------------|
+| `# Title` | Epic |
+| `## Title` | Task |
+| `### Title` | Sub-task |
+
+Everything below a header becomes that issue's description. See [example.md](example.md) for a minimal example and [example-full.md](example-full.md) for comprehensive formatting (code blocks, tables, checklists, etc.).
+
+## Optional: System-wide `md2jira` command
+
+To run `md2jira` from any directory without activating the venv, create a wrapper script somewhere on your `PATH`:
+
+```bash
+#!/bin/bash
+source /path/to/md2jira/.venv/bin/activate
+md2jira "$@"
 ```
 
-## Example Markdown Format
+Make it executable with `chmod +x` and you're set.
 
-Please see the [example.md](example.md) file for examples of different formatting options.
+## Running the full test suite
 
-## Wishlist
-
-* Update local files with updates from JIRA
-* Support for editing checklists
+```bash
+pytest test/ -v
+```

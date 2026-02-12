@@ -12,11 +12,11 @@ pytest.args = argparse.ArgumentParser()
 pytest.args.JIRA_PROJECT_KEY = os.environ.get('JIRA_PROJECT_KEY')
 pytest.issues = {}
 pytest.issues['test_checklists'] = Issue(
-    IssueType.Story, 
+    IssueType.Task, 
     '', 
     'checklist test ticket', 
     'description has `TEST`',
-    '# Default Checklist\n* [done] Watch Frozen 2\n* [done] Dry Tears\n* [in progress] Walk in circles\n* [open] Rewatch Frozen 2\n'
+    '# Default Checklist\n* [x] Watch Frozen 2\n* [x] Dry Tears\n* [>] Walk in circles\n* [ ] Rewatch Frozen 2\n'
 )
 
 class TestMD2JIRA:
@@ -30,7 +30,7 @@ class TestMD2JIRA:
             pytest.issues['test_checklists'].issue_key = result.key
         assert result != None
         assert type(result) == Issue
-        assert result.type == IssueType.Story
+        assert result.type == IssueType.Task
         assert result.key != ''
 
     def test_read(self):
@@ -38,7 +38,7 @@ class TestMD2JIRA:
         result     = md2jira.read_issue(pytest.issues['test_checklists'].issue_key)
         assert result != None
         assert type(result) == Issue
-        assert result.type == IssueType.Story
+        assert result.type == IssueType.Task
         assert result.key != ''
         assert result.key == pytest.issues['test_checklists'].issue_key
         assert result.summary == pytest.issues['test_checklists'].summary
@@ -63,7 +63,7 @@ class TestMD2JIRA:
 
     def test_delete(self):
         md2jira    = MD2Jira(pytest.args)
-        issue      = Issue(IssueType.Story, pytest.issues['test_checklists'].issue_key)
+        issue      = Issue(IssueType.Task, pytest.issues['test_checklists'].issue_key)
         result     = md2jira.delete_issue(issue)
         assert type(result) == urllib3.response.HTTPResponse
         assert result.reason == 'No Content'

@@ -33,6 +33,6 @@ What's going to happen?
 
 TODO: Trigger changes if/when only checklist is updated, i.e. include checklist in issue hash calculation
 
-* [in progress] Checklist Item A
-* [in progress] Checklist Item B
-* [done] Checklist Item C
+* [>] Checklist Item A
+* [>] Checklist Item B
+* [x] Checklist Item C

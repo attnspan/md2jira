@@ -7,7 +7,7 @@ name = "md2jira"
 version = "1.0.0"
 description = "Convert Markdown into JIRA issues"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 authors = [
     {name = "Daniel Racanelli", email = "dracanelli@wbgames.com"}
 ]

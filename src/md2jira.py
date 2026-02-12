@@ -503,7 +503,8 @@ class Issue:
         if checklist_text is None:
             checklist_text = ''
 
-        if checklist_text and len(checklist_text) > 0: 
+        # Only process checklist if it's a string (not a dict from Jira API)
+        if checklist_text and len(str(checklist_text)) > 0 and isinstance(checklist_text, str): 
             self.checklist = self.process_checklist(checklist_text)
 
     def process_checklist(self, str):

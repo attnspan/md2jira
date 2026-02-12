@@ -7,3 +7,4 @@ PULL_REQUEST_TEMPLATE.md
 __pycache__
 *.pyc
 *.sh
+*.egg-info/

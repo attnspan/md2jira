@@ -450,11 +450,14 @@ class MD2Jira:
         for child in adf.get('content', []):
             parts.append(self.adf_to_text(child))
 
+        # Block-level *containers* (whose children are themselves blocks)
+        # get newline separators.  Inline containers like paragraph and
+        # heading hold text nodes that should be concatenated directly.
         separator = '\n' if node_type in (
-            'doc', 'paragraph', 'heading', 'blockquote',
-            'codeBlock', 'bulletList', 'orderedList', 'listItem',
+            'doc', 'blockquote',
+            'bulletList', 'orderedList', 'listItem',
             'table', 'tableRow', 'tableCell', 'tableHeader',
-            'mediaSingle', 'rule',
+            'mediaSingle',
         ) else ''
 
         return separator.join(parts)

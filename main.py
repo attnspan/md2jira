@@ -14,6 +14,11 @@ parser.add_argument('-p',
     help='"KEY" of target JIRA project',
     type=str
 )
+parser.add_argument('-v', '--verbose',
+    action='store_true',
+    default=False,
+    help='Enable verbose output (show diff details during update detection)'
+)
 args = parser.parse_args()
 
 if __name__=="__main__":

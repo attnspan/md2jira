@@ -42,6 +42,7 @@ class MD2Jira:
 
         self.checklist_custom_field = os.environ.get('JIRA_CHECKLIST_CUSTOMFIELD')
         self.checklist_enabled      = self.checklist_custom_field is not None
+        self.wba_team               = os.environ.get('JIRA_WBA_TEAM')
 
     def jira_http_call(self, url, verb='GET', body=''):
 
@@ -277,10 +278,11 @@ class MD2Jira:
             if remote_issue.type is IssueType.Task:
                 self.parent_id = remote_issue.key
             issue.key = remote_issue.key
+            issue.type = remote_issue.type
 
             issue_changed = self.diff_issue_against_remote(issue, remote_issue)
             if issue_changed is True:
-                issue_data = self.prepare_issue(issue)
+                issue_data = self.prepare_issue(issue, updating=True)
                 self.update_issue(issue, issue_data)
                 # TODO: Update issue cache
                 self.update_issue_cache(issue)
@@ -341,7 +343,7 @@ class MD2Jira:
 
         return result
 
-    def prepare_issue(self, issue):
+    def prepare_issue(self, issue, updating=False):
         """Prepare JSON data to send to JIRA API"""
         project_key = self.PROJECT_KEY
 
@@ -364,23 +366,17 @@ class MD2Jira:
 
         if issue.type is IssueType.Epic:
             out_json['fields']['customfield_10011'] = issue.summary
-            #10307 for Epics?
-            #out_json['fields']['customfield_10307'] = issue.summary
-            # Epic Type == 'Platform'?
-            # out_json['fields']['customfield_10037'] = {
-            #     'value': 'Platform'
-            # }
         if issue.type is IssueType.Task and len(self.epic_id) > 0:
             out_json['fields']['customfield_10014'] = self.epic_id
         if issue.type is IssueType.Subtask and len(self.parent_id) > 0:
             out_json['fields']['parent'] = {
                 'key': self.parent_id
             }
-    
-        # Add 'WBA Team' == 'Security'
-        out_json['fields']['customfield_10032'] = {
-            'value': 'Security'
-        }
+
+        if not updating and self.wba_team:
+            out_json['fields']['customfield_10032'] = {
+                'value': self.wba_team
+            }
 
         if hasattr(issue, 'checklist') and len(issue.checklist.items) > 0:
             if self.checklist_enabled is False:

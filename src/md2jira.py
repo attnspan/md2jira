@@ -42,6 +42,7 @@ class MD2Jira:
 
         self.checklist_custom_field = os.environ.get('JIRA_CHECKLIST_CUSTOMFIELD')
         self.checklist_enabled      = self.checklist_custom_field is not None
+        self.verbose                = getattr(args, 'verbose', False)
         self.wba_team               = os.environ.get('JIRA_WBA_TEAM')
 
     def jira_http_call(self, url, verb='GET', body=''):
@@ -191,11 +192,11 @@ class MD2Jira:
                 }
                 issue_type = type_mapping.get(issue_type_clean, IssueType.Task)
             
-            # Handle description field - it might be a dict with content
+            # Handle description field -- API v3 returns Atlassian Document
+            # Format (ADF), a nested JSON dict, instead of wiki-markup text.
             description = fields.get('description', '')
             if isinstance(description, dict):
-                # Simple extraction for now - just convert dict to string
-                description = str(description)
+                description = self.adf_to_text(description)
             elif description is None:
                 description = ''
                 
@@ -280,14 +281,32 @@ class MD2Jira:
             issue.key = remote_issue.key
             issue.type = remote_issue.type
 
+            # Primary change detection: compare local content hash against
+            # the cache of what was last synced.  This avoids false positives
+            # caused by JIRA API v3 returning descriptions in ADF format
+            # (which can never match the original wiki-markup text).
+            local_hash = self.generate_issue_hash(issue)
+            if self.check_issue_cache_hash(issue.key, local_hash):
+                if self.verbose:
+                    print("  [cache-hit] hash {} unchanged".format(local_hash))
+                print("{}: \"{}\" up to date, skipping".format(issue.key, issue.summary))
+                return
+
+            if self.verbose:
+                print("  [cache-miss] {} not in cache or hash differs, comparing against remote".format(issue.key))
+
+            # Fallback: if the issue is not in the cache (first run, cache
+            # cleared, etc.), compare against the remote issue directly.
             issue_changed = self.diff_issue_against_remote(issue, remote_issue)
             if issue_changed is True:
                 issue_data = self.prepare_issue(issue, updating=True)
                 self.update_issue(issue, issue_data)
-                # TODO: Update issue cache
                 self.update_issue_cache(issue)
             else:
-                print ("{}: \"{}\" up to date, skipping".format(issue.key, issue.summary))
+                # Content matches remote -- seed the cache so future runs
+                # can use the fast-path above.
+                self.update_issue_cache(issue)
+                print("{}: \"{}\" up to date, skipping".format(issue.key, issue.summary))
         else:
             # TODO: Create new issues
             issue_data   = self.prepare_issue(issue)
@@ -304,44 +323,59 @@ class MD2Jira:
                 print('ERROR: unable to create "{}"'.format(issue.summary))
 
     def diff_issue_against_remote(self, issue, remote_issue):
-        """Determine if remote issue has changed since last local edit"""
-        result = False
+        """Determine if remote issue has changed since last local edit.
+
+        Returns True when the local issue content differs from the remote
+        issue, meaning an update API call is warranted.
+
+        Note: the remote description may have been converted from ADF to
+        plain text by adf_to_text(), so an exact character-for-character
+        match is not always possible.  We normalise both sides (strip
+        whitespace, collapse blank lines) before comparing.
+        """
+        changes = []
 
         if issue.summary != remote_issue.summary:
-            result = True
+            changes.append('summary')
 
-        """Convert certain to JIRA Wiki format to Markdown"""
-        regex = {
-            'link': re.compile(r'^(.*)\[([^|]+)\|([^\]]+)\](.*)$')
-        }
-        replacements = {
-            'link': r'\1[\2](\3)\4'
-        }
+        local_desc  = self._normalise_for_compare(issue.description)
+        remote_desc = self._normalise_for_compare(remote_issue.description or '')
+        if local_desc != remote_desc:
+            changes.append('description')
 
-        # for format in regex:
-        #     matches = re.match(regex[format], str)
-        #     if matches is not None:
-        #         str     = re.sub(regex[format], replacements[format], str)
-        # return str
+        local_cl  = (issue.checklist.text or '').strip()
+        remote_cl = (remote_issue.checklist.text or '').strip()
+        if local_cl != remote_cl:
+            changes.append('checklist')
 
-        wiki2md = []
-        lines = issue.description.strip().split('\n')
+        if changes and self.verbose:
+            print("  [diff] {} changed: {}".format(
+                issue.key or issue.summary, ', '.join(changes)))
+
+        return len(changes) > 0
+
+    @staticmethod
+    def _normalise_for_compare(text):
+        """Normalise a description string for comparison.
+
+        Strips leading/trailing whitespace, collapses runs of blank lines
+        into a single newline, and strips trailing whitespace from each line.
+        """
+        if not text:
+            return ''
+        lines = [l.rstrip() for l in text.strip().splitlines()]
+        # Collapse consecutive blank lines into one
+        normalised = []
+        prev_blank = False
         for line in lines:
-            for format in regex:
-                matches = re.match(regex[format], line)
-                if matches is not None:
-                    line = re.sub(regex[format], replacements[format], line)
-            wiki2md.append(line.rstrip())
-        
-        remote_issue.description = str(remote_issue.description or '')
-        if issue.description.strip() != remote_issue.description:
-            result = True
-
-        remote_issue.checklist.text = str(remote_issue.checklist.text or '')
-        if issue.checklist.text != remote_issue.checklist.text:
-            result = True
-
-        return result
+            if line == '':
+                if not prev_blank:
+                    normalised.append(line)
+                prev_blank = True
+            else:
+                normalised.append(line)
+                prev_blank = False
+        return '\n'.join(normalised)
 
     def prepare_issue(self, issue, updating=False):
         """Prepare JSON data to send to JIRA API"""
@@ -387,6 +421,42 @@ class MD2Jira:
                 out_json['fields'][self.checklist_custom_field] = checklist_text
 
         return json.dumps(out_json)
+
+    def adf_to_text(self, adf):
+        """Extract plain text from an Atlassian Document Format (ADF) dict.
+
+        JIRA API v3 returns descriptions as ADF -- a nested JSON structure.
+        This method recursively walks the tree and concatenates all text
+        nodes, inserting newlines between block-level elements so that the
+        result is comparable to the original wiki-markup description.
+        """
+        if adf is None:
+            return ''
+        if isinstance(adf, str):
+            return adf
+
+        parts = []
+        node_type = adf.get('type', '')
+
+        # Leaf text node
+        if node_type == 'text':
+            return adf.get('text', '')
+
+        # Recurse into children
+        for child in adf.get('content', []):
+            parts.append(self.adf_to_text(child))
+
+        # Block-level *containers* (whose children are themselves blocks)
+        # get newline separators.  Inline containers like paragraph and
+        # heading hold text nodes that should be concatenated directly.
+        separator = '\n' if node_type in (
+            'doc', 'blockquote',
+            'bulletList', 'orderedList', 'listItem',
+            'table', 'tableRow', 'tableCell', 'tableHeader',
+            'mediaSingle',
+        ) else ''
+
+        return separator.join(parts)
 
     def md2wiki(self, _str):
         """Convert certain markdown to JIRA Wiki format"""
